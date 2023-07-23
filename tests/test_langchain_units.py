@@ -4,7 +4,7 @@ import tempfile
 import pytest
 
 from tests.utils import wrap_test_forked
-from src.enums import DocumentChoices, LangChainAction
+from src.enums import DocumentSubset, LangChainAction, LangChainMode
 from src.gpt_langchain import get_persist_directory
 from src.utils import zip_data, download_simple, get_ngpus_vis, get_mem_gpus, have_faiss, remove, get_kwargs
 
@@ -230,6 +230,7 @@ def test_qa_daidocs_db_chunk_hf_dbs_switch_embedding(db_type):
                       use_auth_token=False,
                       trust_remote_code=True,
                       offload_folder=None,
+                      rope_scaling=None,
                       compile_model=True,
 
                       verbose=False)
@@ -381,7 +382,7 @@ def test_make_add_db(repeat, db_type):
                                                            add_if_exists=False,
                                                            collection_name='MyData',
                                                            fail_any_exception=True, db_type=db_type)
-                    db1 = [dbmy, 'foouuid']
+                    db1 = {LangChainMode.MY_DATA.value: [dbmy, 'foouuid']}
                     assert dbmy is not None
                     docs1 = dbmy.similarity_search("World")
                     assert len(docs1) == 1
@@ -392,9 +393,9 @@ def test_make_add_db(repeat, db_type):
                     get_source_files(db=db)
                     get_source_files(db=dbmy)
                     get_source_files_given_langchain_mode(db1, langchain_mode=langchain_mode, dbs={langchain_mode: db})
-                    get_source_files_given_langchain_mode(db1, langchain_mode='MyData', dbs=None)
+                    get_source_files_given_langchain_mode(db1, langchain_mode='MyData', dbs={})
                     get_db(db1, langchain_mode='UserData', dbs={langchain_mode: db})
-                    get_db(db1, langchain_mode='MyDatta', dbs=None)
+                    get_db(db1, langchain_mode='MyData', dbs={})
 
                     msg1up = "Beefy Chicken"
                     test_file2 = os.path.join(tmp_user_path, 'test2.txt')
@@ -409,18 +410,32 @@ def test_make_add_db(repeat, db_type):
                                   enable_captions=False,
                                   captions_model="Salesforce/blip-image-captioning-base",
                                   enable_ocr=False,
+                                  enable_pdf_ocr='auto',
                                   verbose=False,
                                   is_url=False, is_txt=False)
-                    z1, z2, source_files_added, exceptions = update_user_db(test_file2_my, db1, chunk,
+                    langchain_mode2 = 'MyData'
+                    selection_docs_state1 = dict(langchain_modes=[langchain_mode2],
+                                                 langchain_mode_paths={},
+                                                 visible_langchain_modes=[langchain_mode2])
+                    z1, z2, source_files_added, exceptions = update_user_db(test_file2_my, db1,
+                                                                            selection_docs_state1,
+                                                                            chunk,
                                                                             chunk_size,
-                                                                            'MyData',
-                                                                            dbs=None, db_type=db_type,
+                                                                            langchain_mode2,
+                                                                            dbs={}, db_type=db_type,
                                                                             **kwargs)
                     assert z1 is None
                     assert 'MyData' == z2
                     assert 'test2my' in str(source_files_added)
                     assert len(exceptions) == 0
-                    z1, z2, source_files_added, exceptions = update_user_db(test_file2, db1, chunk, chunk_size,
+
+                    langchain_mode = 'UserData'
+                    selection_docs_state2 = dict(langchain_modes=[langchain_mode],
+                                                 langchain_mode_paths={langchain_mode: tmp_user_path},
+                                                 visible_langchain_modes=[langchain_mode])
+                    z1, z2, source_files_added, exceptions = update_user_db(test_file2, db1,
+                                                                            selection_docs_state2,
+                                                                            chunk, chunk_size,
                                                                             langchain_mode,
                                                                             dbs={langchain_mode: db},
                                                                             db_type=db_type,
@@ -428,17 +443,17 @@ def test_make_add_db(repeat, db_type):
                     assert 'test2' in str(source_files_added)
                     assert langchain_mode == z2
                     assert z1 is None
-                    docs_state0 = [x.name for x in list(DocumentChoices)]
+                    docs_state0 = [x.name for x in list(DocumentSubset)]
                     get_sources(db1, langchain_mode, dbs={langchain_mode: db}, docs_state0=docs_state0)
-                    get_sources(db1, 'MyData', dbs=None, docs_state0=docs_state0)
+                    get_sources(db1, 'MyData', dbs={}, docs_state0=docs_state0)
                     kwargs2 = dict(first_para=False,
                                    text_limit=None, chunk=chunk, chunk_size=chunk_size,
-                                   user_path=tmp_user_path, db_type=db_type,
+                                   langchain_mode_paths={langchain_mode: tmp_user_path}, db_type=db_type,
                                    load_db_if_exists=True,
                                    n_jobs=-1, verbose=False)
                     update_and_get_source_files_given_langchain_mode(db1, langchain_mode, dbs={langchain_mode: db},
                                                                      **kwargs2)
-                    update_and_get_source_files_given_langchain_mode(db1, 'MyData', dbs=None, **kwargs2)
+                    update_and_get_source_files_given_langchain_mode(db1, 'MyData', dbs={}, **kwargs2)
 
                     assert path_to_docs(test_file2_my)[0].metadata['source'] == test_file2_my
                     assert os.path.normpath(
@@ -471,30 +486,16 @@ def test_make_add_db(repeat, db_type):
                                                        collection_name=collection_name)
                     assert db is not None
                     docs = db.similarity_search("World")
-                    if db_type == 'weaviate':
-                        # FIXME: weaviate doesn't know about persistent directory properly
-                        assert len(docs) == 4
-                        assert docs[0].page_content == msg1
-                        assert docs[1].page_content in [msg2, msg1up]
-                        assert docs[2].page_content in [msg2, msg1up]
-                        assert docs[3].page_content in [msg2, msg1up]
-                        assert os.path.normpath(docs[0].metadata['source']) == os.path.normpath(test_file1)
+                    assert len(docs) == 3
+                    assert docs[0].page_content == msg1
+                    assert docs[1].page_content in [msg2, msg1up]
+                    assert docs[2].page_content in [msg2, msg1up]
+                    assert os.path.normpath(docs[0].metadata['source']) == os.path.normpath(test_file1)
 
-                        docs = db.similarity_search("Jill")
-                        assert len(docs) == 4
-                        assert docs[0].page_content == msg2
-                        assert os.path.normpath(docs[0].metadata['source']) == os.path.normpath(test_file2)
-                    else:
-                        assert len(docs) == 3
-                        assert docs[0].page_content == msg1
-                        assert docs[1].page_content in [msg2, msg1up]
-                        assert docs[2].page_content in [msg2, msg1up]
-                        assert os.path.normpath(docs[0].metadata['source']) == os.path.normpath(test_file1)
-
-                        docs = db.similarity_search("Jill")
-                        assert len(docs) == 3
-                        assert docs[0].page_content == msg2
-                        assert os.path.normpath(docs[0].metadata['source']) == os.path.normpath(test_file2)
+                    docs = db.similarity_search("Jill")
+                    assert len(docs) == 3
+                    assert docs[0].page_content == msg2
+                    assert os.path.normpath(docs[0].metadata['source']) == os.path.normpath(test_file2)
 
 
 @pytest.mark.parametrize("db_type", db_types)
@@ -595,7 +596,8 @@ def test_xls_add(db_type):
             assert db is not None
             docs = db.similarity_search("What is Profit?")
             assert len(docs) == 4
-            assert '16604.000' in docs[0].page_content or 'Small Business' in docs[0].page_content
+            assert '16604.000' in docs[0].page_content or 'Small Business' in docs[
+                0].page_content or 'United States of America' in docs[0].page_content
             assert os.path.normpath(docs[0].metadata['source']) == os.path.normpath(test_file1)
 
 
@@ -617,7 +619,7 @@ def test_md_add(db_type):
             assert db is not None
             docs = db.similarity_search("What is h2oGPT?")
             assert len(docs) == 4
-            assert 'h2oGPT is a large language model' in docs[0].page_content
+            assert 'Query and summarize your documents' in docs[0].page_content
             assert os.path.normpath(docs[0].metadata['source']) == os.path.normpath(test_file1)
 
 
@@ -705,6 +707,46 @@ def test_pptx_add(db_type):
             docs = db.similarity_search("Suggestions")
             assert len(docs) == 4
             assert 'Presentation' in docs[0].page_content
+            assert os.path.normpath(docs[0].metadata['source']) == os.path.normpath(test_file1)
+
+
+@pytest.mark.parametrize("db_type", db_types)
+@wrap_test_forked
+def test_pdf_add(db_type):
+    from src.make_db import make_db_main
+    with tempfile.TemporaryDirectory() as tmp_persistent_directory:
+        with tempfile.TemporaryDirectory() as tmp_user_path:
+            url = 'https://www.africau.edu/images/default/sample.pdf'
+            test_file1 = os.path.join(tmp_user_path, 'sample.pdf')
+            download_simple(url, dest=test_file1)
+            db, collection_name = make_db_main(persist_directory=tmp_persistent_directory, user_path=tmp_user_path,
+                                               fail_any_exception=True, db_type=db_type,
+                                               add_if_exists=False)
+            assert db is not None
+            docs = db.similarity_search("Suggestions")
+            assert len(docs) == 3
+            assert 'And more text. And more text.' in docs[0].page_content
+            assert os.path.normpath(docs[0].metadata['source']) == os.path.normpath(test_file1)
+
+
+@pytest.mark.parametrize("enable_pdf_ocr", ['auto', 'on'])
+@pytest.mark.parametrize("db_type", db_types)
+@wrap_test_forked
+def test_image_pdf_add(db_type, enable_pdf_ocr):
+    from src.make_db import make_db_main
+    with tempfile.TemporaryDirectory() as tmp_persistent_directory:
+        with tempfile.TemporaryDirectory() as tmp_user_path:
+            test_file1 = os.path.join('tests', 'CityofTshwaneWater.pdf')
+            shutil.copy(test_file1, tmp_user_path)
+            test_file1 = os.path.join(tmp_user_path, 'CityofTshwaneWater.pdf')
+            db, collection_name = make_db_main(persist_directory=tmp_persistent_directory, user_path=tmp_user_path,
+                                               fail_any_exception=True, db_type=db_type,
+                                               enable_pdf_ocr=enable_pdf_ocr,
+                                               add_if_exists=False)
+            assert db is not None
+            docs = db.similarity_search("List Tshwane's concerns about water.")
+            assert len(docs) == 4
+            assert 'we appeal to residents that do have water to please use it sparingly.' in docs[1].page_content
             assert os.path.normpath(docs[0].metadata['source']) == os.path.normpath(test_file1)
 
 
@@ -807,7 +849,8 @@ def run_png_add(captions_model=None, caption_gpu=False, pre_load_caption_model=F
             shutil.copy(test_file1, tmp_user_path)
             test_file1 = os.path.join(tmp_user_path, os.path.basename(test_file1))
             db, collection_name = make_db_main(persist_directory=tmp_persistent_directory, user_path=tmp_user_path,
-                                               fail_any_exception=True, enable_ocr=False, caption_gpu=caption_gpu,
+                                               fail_any_exception=True, enable_ocr=False, enable_pdf_ocr='auto',
+                                               caption_gpu=caption_gpu,
                                                pre_load_caption_model=pre_load_caption_model,
                                                captions_model=captions_model, db_type=db_type,
                                                add_if_exists=False)

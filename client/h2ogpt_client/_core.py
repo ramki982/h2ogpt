@@ -5,7 +5,7 @@ import gradio_client  # type: ignore
 
 from h2ogpt_client import _utils
 from h2ogpt_client._h2ogpt_enums import (
-    DocumentChoices,
+    DocumentSubset,
     LangChainAction,
     LangChainMode,
     PromptType,
@@ -69,6 +69,7 @@ class TextCompletionCreator:
         number_returns: int = 1,
         system_pre_context: str = "",
         langchain_mode: LangChainMode = LangChainMode.DISABLED,
+        add_chat_history_to_context: bool = True,
     ) -> "TextCompletion":
         """
         Creates a new text completion.
@@ -93,6 +94,7 @@ class TextCompletionCreator:
         :param number_returns:
         :param system_pre_context: directly pre-appended without prompt processing
         :param langchain_mode: LangChain mode
+        :param add_chat_history_to_context: Whether to add chat history to context
         """
         params = _utils.to_h2ogpt_params(locals().copy())
         params["instruction"] = ""  # empty when chat_mode is False
@@ -103,12 +105,13 @@ class TextCompletionCreator:
         params["chat"] = False
         params["instruction_nochat"] = None  # future prompt
         params["langchain_mode"] = langchain_mode.value  # convert to serializable type
+        params["add_chat_history_to_context"] = True
         params["langchain_action"] = LangChainAction.QUERY.value
         params["langchain_agents"] = []
         params["top_k_docs"] = 4  # langchain: number of document chunks
         params["chunk"] = True  # langchain: whether to chunk documents
         params["chunk_size"] = 512  # langchain: chunk size for document chunking
-        params["document_subset"] = DocumentChoices.Relevant.name
+        params["document_subset"] = DocumentSubset.Relevant.name
         params["document_choice"] = []
         return TextCompletion(self._client, params)
 
@@ -173,6 +176,7 @@ class ChatCompletionCreator:
         number_returns: int = 1,
         system_pre_context: str = "",
         langchain_mode: LangChainMode = LangChainMode.DISABLED,
+        add_chat_history_to_context: bool = True,
     ) -> "ChatCompletion":
         """
         Creates a new chat completion.
@@ -197,6 +201,7 @@ class ChatCompletionCreator:
         :param number_returns:
         :param system_pre_context: directly pre-appended without prompt processing
         :param langchain_mode: LangChain mode
+        :param add_chat_history_to_context: Whether to add chat history to context
         """
         params = _utils.to_h2ogpt_params(locals().copy())
         params["instruction"] = None  # future prompts
@@ -207,12 +212,13 @@ class ChatCompletionCreator:
         params["chat"] = True
         params["instruction_nochat"] = ""  # empty when chat_mode is True
         params["langchain_mode"] = langchain_mode.value  # convert to serializable type
+        params["add_chat_history_to_context"] = True
         params["langchain_action"] = LangChainAction.QUERY.value
         params["langchain_agents"] = []
         params["top_k_docs"] = 4  # langchain: number of document chunks
         params["chunk"] = True  # langchain: whether to chunk documents
         params["chunk_size"] = 512  # langchain: chunk size for document chunking
-        params["document_subset"] = DocumentChoices.Relevant.name
+        params["document_subset"] = DocumentSubset.Relevant.name
         params["document_choice"] = []
         params["chatbot"] = []  # chat history
         return ChatCompletion(self._client, params)

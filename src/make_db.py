@@ -9,7 +9,8 @@ def glob_to_db(user_path, chunk=True, chunk_size=512, verbose=False,
                fail_any_exception=False, n_jobs=-1, url=None,
                enable_captions=True, captions_model=None,
                caption_loader=None,
-               enable_ocr=False):
+               enable_ocr=False,
+               enable_pdf_ocr='auto'):
     sources1 = path_to_docs(user_path, verbose=verbose, fail_any_exception=fail_any_exception,
                             n_jobs=n_jobs,
                             chunk=chunk,
@@ -18,6 +19,7 @@ def glob_to_db(user_path, chunk=True, chunk_size=512, verbose=False,
                             captions_model=captions_model,
                             caption_loader=caption_loader,
                             enable_ocr=enable_ocr,
+                            enable_pdf_ocr=enable_pdf_ocr,
                             )
     return sources1
 
@@ -43,11 +45,12 @@ def make_db_main(use_openai_embedding: bool = False,
                  pre_load_caption_model: bool = False,
                  caption_gpu: bool = True,
                  enable_ocr: bool = False,
+                 enable_pdf_ocr: str = 'auto',
                  db_type: str = 'chroma',
                  ):
     """
     # To make UserData db for generate.py, put pdfs, etc. into path user_path and run:
-    python make_db.py
+    python src/make_db.py
 
     # once db is made, can use in generate.py like:
 
@@ -58,10 +61,10 @@ def make_db_main(use_openai_embedding: bool = False,
     zip -r db_dir_UserData.zip db_dir_UserData
 
     # To get all db files (except large wiki_full) do:
-    python make_db.py --download_some=True
+    python src/make_db.py --download_some=True
 
     # To get a single db file from HF:
-    python make_db.py --download_one=db_dir_DriverlessAI_docs.zip
+    python src/make_db.py --download_one=db_dir_DriverlessAI_docs.zip
 
     :param use_openai_embedding: Whether to use OpenAI embedding
     :param hf_embedding_model: HF embedding model to use. Like generate.py, uses 'hkunlp/instructor-large' if have GPUs, else "sentence-transformers/all-MiniLM-L6-v2"
@@ -84,6 +87,7 @@ def make_db_main(use_openai_embedding: bool = False,
     :param pre_load_caption_model: See generate.py
     :param caption_gpu: Caption images on GPU if present
     :param enable_ocr: Whether to enable OCR on images
+    :param enable_pdf_ocr: 'auto' uses OCR on PDFs as backup, good to handle image PDFs
     :param db_type: Type of db to create. Currently only 'chroma' and 'weaviate' is supported.
     :return: None
     """
@@ -146,6 +150,7 @@ def make_db_main(use_openai_embedding: bool = False,
                          captions_model=captions_model,
                          caption_loader=caption_loader,
                          enable_ocr=enable_ocr,
+                         enable_pdf_ocr=enable_pdf_ocr,
                          )
     exceptions = [x for x in sources if x.metadata.get('exception')]
     print("Exceptions: %s" % exceptions, flush=True)

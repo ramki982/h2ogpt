@@ -1,12 +1,14 @@
 import ast
 import json
 import os, sys
+import shutil
+
 import pytest
 
 from tests.utils import wrap_test_forked, make_user_path_test, get_llama
 from src.client_test import get_client, get_args, run_client_gen
-from src.enums import LangChainAction
-from src.utils import get_githash
+from src.enums import LangChainAction, LangChainMode
+from src.utils import get_githash, remove, remove_collection_enum, download_simple
 
 
 @wrap_test_forked
@@ -52,6 +54,7 @@ def test_client1api_lean(admin_pass):
     base_model = 'h2oai/h2ogpt-oig-oasst1-512-6_9b'
     os.environ['ADMIN_PASS'] = admin_pass
     inf_port = os.environ['GRADIO_SERVER_PORT'] = "9999"
+    os.environ['GET_GITHASH'] = '1'
     main(base_model=base_model, prompt_type='human_bot', chat=False,
          stream_output=False, gradio=True, num_beams=1, block_gradio_exit=False)
 
@@ -242,7 +245,9 @@ def test_client_chat_stream_langchain():
     # bad answer about h2o.ai is just becomes dumb model, why flipped context above,
     # but not stable over different systems
     assert 'h2oGPT is a large language model' in res_dict['response'] or \
-           'H2O.ai is a technology company' in res_dict['response']
+           'H2O.ai is a technology company' in res_dict['response'] or \
+           'an open-source project' in res_dict['response'] or \
+           'h2oGPT is a project that allows' in res_dict['response']
 
 
 @pytest.mark.parametrize("max_new_tokens", [256, 2048])
@@ -287,7 +292,10 @@ def test_client_chat_stream_langchain_steps(max_new_tokens, top_k_docs):
             'H2O GPT is a chatbot that can be trained' in res_dict['response'] or
             'A large language model (LLM)' in res_dict['response'] or
             'GPT-based language model' in res_dict['response'] or
-            'H2O.ai is a technology company' in res_dict['response']
+            'H2O.ai is a technology company' in res_dict['response'] or
+            'an open-source project' in res_dict['response'] or
+            'is a company that provides' in res_dict['response'] or
+            'h2oGPT is a project that' in res_dict['response']
             ) \
            and ('FAQ.md' in res_dict['response'] or 'README.md' in res_dict['response'])
 
@@ -312,13 +320,15 @@ def test_client_chat_stream_langchain_steps(max_new_tokens, top_k_docs):
             'Whisper is a secure messaging app' in res_dict['response'] or
             'secure, private, and anonymous chatbot' in res_dict['response'] or
             'Whisper is a secure, anonymous, and encrypted' in res_dict['response'] or
-            'secure, decentralized, and anonymous chat platform' in res_dict['response']
+            'secure, decentralized, and anonymous chat platform' in res_dict['response'] or
+            'A low-code development framework' in res_dict['response'] or
+            'secure messaging app' in res_dict['response']
             ) \
            and ('FAQ.md' in res_dict['response'] or 'README.md' in res_dict['response'])
 
     # QUERY2
     prompt = "What is h2oGPT?"
-    langchain_mode = 'ChatLLM'
+    langchain_mode = 'LLM'
     kwargs, args = get_args(prompt, prompt_type, chat=True, stream_output=stream_output,
                             max_new_tokens=max_new_tokens,
                             top_k_docs=top_k_docs,
@@ -354,7 +364,12 @@ def test_client_chat_stream_langchain_steps(max_new_tokens, top_k_docs):
             'A secure, private, and anonymous chatbot' in res_dict['response'] or
             'A secure, encrypted chat service that allows' in res_dict['response'] or
             'A secure, private, and encrypted chatbot' in res_dict['response'] or
-            'A secret communication system used' in res_dict['response']
+            'A secret communication system used' in res_dict['response'] or
+            'H2O AI Cloud is a cloud-based platform' in res_dict['response'] or
+            'is a platform for deploying' in res_dict['response'] or
+            'is a language model that is trained' in res_dict['response'] or
+            'private, and anonymous communication' in res_dict['response'] or
+            'The large language model is' in res_dict['response']
             ) \
            and '.md' in res_dict['response']
 
@@ -390,7 +405,7 @@ def test_client_chat_stream_langchain_steps2(max_new_tokens, top_k_docs):
 
     # QUERY1
     prompt = "Who are you?"
-    langchain_mode = 'ChatLLM'
+    langchain_mode = 'LLM'
     kwargs, args = get_args(prompt, prompt_type, chat=True, stream_output=stream_output,
                             max_new_tokens=max_new_tokens, langchain_mode=langchain_mode)
 
@@ -551,7 +566,7 @@ def test_text_generation_inference_server1():
     """
     e.g.
     SERVER on 192.168.1.46
-    (alpaca) jon@gpu:/data/jon/h2o-llm$ CUDA_VISIBLE_DEVICES=0,1 docker run --gpus all --shm-size 2g -e NCCL_SHM_DISABLE=1 -e TRANSFORMERS_CACHE="/.cache/" -p 6112:80 -v $HOME/.cache:/.cache/ -v $HOME/.cache/huggingface/hub/:/data  ghcr.io/huggingface/text-generation-inference:0.8.2 --model-id h2oai/h2ogpt-oasst1-512-12b --max-input-length 2048 --max-total-tokens 4096 --sharded=true --num-shard=2 --disable-custom-kernels --quantize bitsandbytes --trust-remote-code --max-stop-sequences=6
+    (alpaca) jon@gpu:/data/jon/h2o-llm$ CUDA_VISIBLE_DEVICES=0,1 docker run --gpus all --shm-size 2g -e NCCL_SHM_DISABLE=1 -e TRANSFORMERS_CACHE="/.cache/" -p 6112:80 -v $HOME/.cache:/.cache/ -v $HOME/.cache/huggingface/hub/:/data  ghcr.io/huggingface/text-generation-inference:latest --model-id h2oai/h2ogpt-oasst1-512-12b --max-input-length 2048 --max-total-tokens 4096 --sharded=true --num-shard=2 --disable-custom-kernels --quantize bitsandbytes --trust-remote-code --max-stop-sequences=6
 
     CLIENT on separate system
     HOST=http://192.168.1.46:6112 SERVER=1 pytest -s -v tests/test_client_calls.py::test_text_generation_inference_server1
@@ -582,3 +597,175 @@ def test_text_generation_inference_server1():
     text = ast.literal_eval(output)['generated_text']
     assert 'Deep learning is a subfield of machine learning' in text or \
            'Deep learning refers to a class of machine learning' in text
+
+
+@pytest.mark.need_tokens
+@wrap_test_forked
+def test_client_chat_stream_langchain_steps3():
+    os.environ['VERBOSE_PIPELINE'] = '1'
+    remove_collection_enum()
+    user_path = make_user_path_test()
+
+    stream_output = True
+    max_new_tokens = 256
+    base_model = 'h2oai/h2ogpt-oig-oasst1-512-6_9b'
+    prompt_type = 'human_bot'
+    langchain_mode = 'UserData'
+    visible_langchain_modes = ['UserData', 'MyData', 'github h2oGPT']
+
+    from src.gen import main
+    main(base_model=base_model, prompt_type=prompt_type, chat=True,
+         stream_output=stream_output, gradio=True, num_beams=1, block_gradio_exit=False,
+         max_new_tokens=max_new_tokens,
+         langchain_mode=langchain_mode, user_path=user_path,
+         visible_langchain_modes=visible_langchain_modes,
+         verbose=True)
+
+    from src.client_test import get_client, get_args, run_client
+    # serialize=False would lead to returning dict for some objects or files for get_sources
+    client = get_client(serialize=False)
+
+    url = 'https://www.africau.edu/images/default/sample.pdf'
+    test_file1 = os.path.join('/tmp/', 'sample1.pdf')
+    download_simple(url, dest=test_file1)
+    res = client.predict(test_file1, True, 512, langchain_mode, api_name='/add_file_api')
+    assert res[0] is None
+    assert res[1] == langchain_mode
+    # note moves from /tmp to stable path, even though not /tmp/gradio upload from UI
+    assert 'file/user_path_test/sample1.pdf' in res[2]
+    assert res[3] == ''
+
+    # control langchain_mode
+    user_path2 = 'user_path2'
+    langchain_mode2 = 'UserData2'
+    remove(user_path2)
+    remove('db_dir_%s' % langchain_mode2)
+    new_langchain_mode_text = '%s, %s' % (langchain_mode2, user_path2)
+    res = client.predict(langchain_mode, new_langchain_mode_text, api_name='/new_langchain_mode_text')
+    assert res[0]['value'] == langchain_mode2
+    assert langchain_mode2 in res[0]['choices']
+    assert res[1] == ''
+    assert res[2]['headers'] == ['Collection', 'Path']
+    assert res[2]['data'] == [['UserData', user_path], ['MyData', None], [langchain_mode2, user_path2]]
+
+    url = 'https://unec.edu.az/application/uploads/2014/12/pdf-sample.pdf'
+    test_file1 = os.path.join('/tmp/', 'pdf-sample.pdf')
+    download_simple(url, dest=test_file1)
+    res = client.predict(test_file1, True, 512, langchain_mode2, api_name='/add_file_api')
+    assert res[0] is None
+    assert res[1] == langchain_mode2
+    assert 'file/%s/pdf-sample.pdf' % user_path2 in res[2]
+    assert 'sample1.pdf' not in res[2]  # ensure no leakage
+    assert res[3] == ''
+
+    # QUERY1
+    prompt = "Is more text boring?"
+    kwargs, args = get_args(prompt, prompt_type, chat=True, stream_output=stream_output,
+                            max_new_tokens=max_new_tokens, langchain_mode=langchain_mode)
+
+    res_dict, client = run_client(client, prompt, args, kwargs)
+    assert 'Yes, it is.' in res_dict['response'] and 'sample1.pdf' in res_dict['response']
+
+    # QUERY2
+    prompt = "What is a universal file format?"
+    kwargs, args = get_args(prompt, prompt_type, chat=True, stream_output=stream_output,
+                            max_new_tokens=max_new_tokens, langchain_mode=langchain_mode2)
+
+    res_dict, client = run_client(client, prompt, args, kwargs)
+    assert 'PDF' in res_dict['response'] and 'pdf-sample.pdf' in res_dict['response']
+
+    # check sources, and do after so would detect leakage
+    res = client.predict(langchain_mode, api_name='/get_sources')
+    # is not actual data!
+    with open(res['name'], 'rb') as f:
+        sources = f.read().decode()
+    assert sources == f'{user_path}/./FAQ.md\n{user_path}/./README.md\n{user_path}/./pexels-evg-kowalievska-1170986_small.jpg\n{user_path}/sample1.pdf'
+
+    res = client.predict(langchain_mode2, api_name='/get_sources')
+    with open(res['name'], 'rb') as f:
+        sources = f.read().decode()
+    assert sources == """%s/pdf-sample.pdf""" % user_path2
+
+    # check sources, and do after so would detect leakage
+    res = client.predict(langchain_mode, api_name='/get_viewable_sources')
+    # is not actual data!
+    with open(res['name'], 'rb') as f:
+        sources = f.read().decode()
+    assert sources == f'{user_path}/./FAQ.md\n{user_path}/./README.md\n{user_path}/./pexels-evg-kowalievska-1170986_small.jpg\n{user_path}/sample1.pdf'
+
+    res = client.predict(langchain_mode2, api_name='/get_viewable_sources')
+    with open(res['name'], 'rb') as f:
+        sources = f.read().decode()
+    assert sources == """%s/pdf-sample.pdf""" % user_path2
+
+    # refresh
+    shutil.copy('tests/next.txt', user_path)
+    res = client.predict(langchain_mode, True, 512, api_name='/refresh_sources')
+    assert 'file/user_path_test/./next.txt' in res
+
+    # check sources, and do after so would detect leakage
+    res = client.predict(langchain_mode, api_name='/get_sources')
+    # is not actual data!
+    with open(res['name'], 'rb') as f:
+        sources = f.read().decode()
+    assert sources == f'{user_path}/./FAQ.md\n{user_path}/./README.md\n{user_path}/./next.txt\n{user_path}/./pexels-evg-kowalievska-1170986_small.jpg\n{user_path}/sample1.pdf'
+
+    # even normal langchain_mode  passed to this should get the other langchain_mode2
+    res = client.predict(langchain_mode, api_name='/load_langchain')
+    assert res[0]['choices'] == ['LLM', langchain_mode, 'MyData', 'github h2oGPT', langchain_mode2]
+    assert res[0]['value'] == langchain_mode
+    assert res[1]['headers'] == ['Collection', 'Path']
+    assert res[1]['data'] == [['UserData', user_path], ['MyData', None], [langchain_mode2, user_path2]]
+
+    # for pure-UI things where just input -> output often, just make sure no failure, if can
+    res = client.predict(api_name='/export_chats')
+    assert res is not None
+
+    url = 'https://research.google/pubs/pub334.pdf'
+    res = client.predict(url, True, 512, langchain_mode, api_name='/add_url')
+    assert res[0] is None
+    assert res[1] == langchain_mode
+    assert url in res[2]
+    assert res[3] == ''
+
+    text = "Yufuu is a wonderful place and you should really visit because there is lots of sun."
+    res = client.predict(text, True, 512, langchain_mode, api_name='/add_text')
+    assert res[0] is None
+    assert res[1] == langchain_mode
+    assert 'file/user_paste/' in res[2]
+    assert res[3] == ''
+
+    langchain_mode = LangChainMode.MY_DATA.value
+    url = 'https://www.africau.edu/images/default/sample.pdf'
+    test_file1 = os.path.join('/tmp/', 'sample1.pdf')
+    download_simple(url, dest=test_file1)
+    res = client.predict(test_file1, True, 512, langchain_mode, api_name='/add_file_api')
+    assert res[0] is None
+    assert res[1] == langchain_mode
+    # will just use source location, e.g. for UI will be /tmp/gradio
+    assert 'file//tmp/sample1.pdf' in res[2]
+    assert res[3] == ''
+
+    # control langchain_mode
+    user_path2 = ''
+    langchain_mode2 = 'MyData2'
+    new_langchain_mode_text = '%s, %s' % (langchain_mode2, user_path2)
+    res = client.predict(langchain_mode, new_langchain_mode_text, api_name='/new_langchain_mode_text')
+    assert res[0]['value'] == langchain_mode2
+    assert langchain_mode2 in res[0]['choices']
+    assert res[1] == ''
+    assert res[2]['headers'] == ['Collection', 'Path']
+    assert res[2]['data'] == [['UserData', user_path], ['MyData', None], ['UserData2', 'user_path2'],
+                              [langchain_mode2, None]]
+
+    url = 'https://unec.edu.az/application/uploads/2014/12/pdf-sample.pdf'
+    test_file1 = os.path.join('/tmp/', 'pdf-sample.pdf')
+    download_simple(url, dest=test_file1)
+    res = client.predict(test_file1, True, 512, langchain_mode2, api_name='/add_file_api')
+    assert res[0] is None
+    assert res[1] == langchain_mode2
+    assert 'file//tmp/pdf-sample.pdf' in res[2]
+    assert 'sample1.pdf' not in res[2]  # ensure no leakage
+    assert res[3] == ''
+
+    # FIXME: Add load_model, unload_model, etc.

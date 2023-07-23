@@ -50,15 +50,15 @@ Open-source data types are supported, .msg is not supported due to GPL-3 require
 
 To support image captioning, on Ubuntu run:
 ```bash
-sudo apt-get install libmagic-dev poppler-utils tesseract-ocr
+sudo apt-get install libmagic-dev poppler-utils tesseract-ocr libtesseract-dev
 ```
 and ensure in `requirements_optional_langchain.txt` that `unstructured[local-inference]` and `pdf2image` are installed.  Otherwise, for no image support just `unstructured` is sufficient.
 
 OCR is disabled by default, but can be enabled if making database via `make_db.py`, and then on Ubuntu run:
 ```bash
-sudo apt-get install tesseract-ocr
+sudo apt-get install tesseract-ocr libtesseract-dev
 ```
-and ensure you `pip install pytesseract`.
+and ensure you `pip install pytesseract`.  See [Tesseract documentation](https://tesseract-ocr.github.io/tessdoc/Installation.html).
 
 To support Microsoft Office docx, doc, xls, xlsx, on Ubuntu run:
 ```bash
@@ -111,24 +111,30 @@ but pymupdf is AGPL, requiring any source code be made available, which is not a
 
 When pymupdf is installed, we will use `PyMuPDFLoader` by default to parse PDFs since better than `PyPDFLoader` and much better than `PDFMinerLoader`.  This can be overridden by setting `PDF_CLASS_NAME=PyPDFLoader` in `.env_gpt4all`.
 
+### Adding new file types
+
+The function `file_to_doc` controls the ingestion, with [allowed ones listed](https://github.com/h2oai/h2ogpt/blob/1184f057088743599e2d5241329551b8f7f5320d/src/gpt_langchain.py#L1021-L1035).   If one wants to add a new file type, add it to the list `file_types`, and then add an entry in `file_to_doc()` function.
+
+Metadata is added using `add_meta` function, and other metadata, like chunk_id, is added after chunking.  One could add a new step to add meta data to `page_content` to each langchain `Document`.
+
 ## Database creation
 
 To use some example databases (will overwrite UserData make above unless change options) and run generate after, do:
 ```bash
-python make_db.py --download_some=True
+python src/make_db.py --download_some=True
 python generate.py --base_model=h2oai/h2ogpt-oasst1-512-12b --load_8bit=True --langchain_mode=UserData --visible_langchain_modes="['UserData', 'wiki', 'MyData', 'github h2oGPT', 'DriverlessAI docs']"
 ```
 which downloads example databases.  This obtains files from some [pre-generated databases](https://huggingface.co/datasets/h2oai/db_dirs).  A large Wikipedia database is also available.
 
 To build the database first outside chatbot, then run generate after, do:
 ```bash
-python make_db.py
+python src/make_db.py
 python generate.py --base_model=h2oai/h2ogpt-oig-oasst1-512-6_9b --langchain_mode=UserData
 ```
 
 To add data to the existing database, then run generate after, do:
 ```bash
-python make_db.py --add_if_exists=True
+python src/make_db.py --add_if_exists=True
 python generate.py --base_model=h2oai/h2ogpt-oig-oasst1-512-6_9b --langchain_mode=UserData
 ```
 
@@ -140,12 +146,31 @@ which will avoid using `user_path` since it is no longer passed.  Otherwise when
 
 If you have enough GPU memory for embedding, but not the LLM as well, then a less private mode is to use OpenAI model.
 ```bash
-python generate.py  --inference_server=openai_chat --base_model=gpt-3.5-turbo --score_model=None --langchain_mode=ChatLLM --visible_langchain_modes="['ChatLLM', 'UserData', 'MyData']"
+python generate.py  --inference_server=openai_chat --base_model=gpt-3.5-turbo --score_model=None --langchain_mode=LLM --visible_langchain_modes="['LLM', 'UserData', 'MyData']"
 ```
 and if you want to push image caption model to get better captions, this can be done if have enough GPU memory or if use OpenAI:
 ```bash
-python generate.py  --inference_server=openai_chat --base_model=gpt-3.5-turbo --score_model=None --langchain_mode=ChatLLM --visible_langchain_modes="['ChatLLM', 'UserData', 'MyData']" --captions_model=Salesforce/blip2-flan-t5-xl
+python generate.py  --inference_server=openai_chat --base_model=gpt-3.5-turbo --score_model=None --langchain_mode=LLM --visible_langchain_modes="['LLM', 'UserData', 'MyData']" --captions_model=Salesforce/blip2-flan-t5-xl
 ```
+
+### Multiple embeddings and sources
+
+We only support one embedding at a time for each database.
+
+So you could use src/make_db.py to make the db for different embeddings (`--hf_embedding_model` like gen.py, any HF model) for each collection (e.g. UserData, UserData2) for each source folders (e.g. user_path, user_path2), and then at generate.py time you can specify those different collection names in `--langchain_modes` and `--visible_langchain_modes` and `--langchain_mode_paths`.  For example:
+```bash
+python src/make_db.py --user_path=user_path --collection_name=UserData --hf_embedding_model=hkunlp/instructor-large
+python src/make_db.py --user_path=user_path2 --collection_name=UserData2 --hf_embedding_model=sentence-transformers/all-MiniLM-L6-v2
+```
+then
+```bash
+python generate.py --base_model='llama' --prompt_type=wizard2 --score_model=None --langchain_mode='UserData' --langchain_modes=['UserData','UserData2'] --visible_langchain_modes=['UserData','UserData2'] --langchain_mode_paths={'UserData':'user_path','UserData2':'user_path2'}
+```
+and watch-out for use of whitespace.  For `langchain_mode_paths` you can pass surrounded by "'s and have spaces.
+
+### Note about Embeddings
+
+The default embedding for GPU is `instructor-large` since most accurate, however it leads to excessively high scores for references due to its flat score distribution.  For CPU the default embedding is `all-MiniLM-L6-v2`, and it has a sharp distribution of scores, so references make sense, but it is less accurate.
 
 ### Note about FAISS
 
@@ -223,8 +248,8 @@ curl -o docker-compose.yml "https://configuration.weaviate.io/v2/docker-compose/
   Refer to the [documentation](https://weaviate.io/developers/weaviate/installation/embedded) for more details about this deployment method.
 ## How To Use
 Simply pass the `--db_type=weaviate` argument. For example:
-```
-python make_db.py --db_type=weaviate
+```bash
+python src/make_db.py --db_type=weaviate
 python generate.py --base_model=h2oai/h2ogpt-oig-oasst1-512-6_9b \
    --langchain_mode=UserData \
    --db_type=weaviate
@@ -233,7 +258,7 @@ will use an embedded weaviate instance.
 
 If you have a weaviate instance hosted at say http://localhost:8080, then you need to define the `WEAVIATE_URL` environment variable before running the scripts:
 ```
-WEAVIATE_URL=http://localhost:8080 python make_db.py --db_type=weaviate
+WEAVIATE_URL=http://localhost:8080 python src/make_db.py --db_type=weaviate
 WEAVIATE_URL=http://localhost:8080 python generate.py --base_model=h2oai/h2ogpt-oig-oasst1-512-6_9b \
    --langchain_mode=UserData \
    --db_type=weaviate

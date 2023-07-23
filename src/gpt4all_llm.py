@@ -95,15 +95,17 @@ def get_llm_gpt4all(model_name,
                     streaming=False,
                     callbacks=None,
                     prompter=None,
+                    context='',
+                    iinput='',
                     verbose=False,
                     ):
     assert prompter is not None
     env_gpt4all_file = ".env_gpt4all"
     env_kwargs = dotenv_values(env_gpt4all_file)
-    n_ctx = env_kwargs.pop('n_ctx', 2048 - max_new_tokens)
+    max_tokens = env_kwargs.pop('max_tokens', 2048 - max_new_tokens)
     default_kwargs = dict(context_erase=0.5,
                           n_batch=1,
-                          n_ctx=n_ctx,
+                          max_tokens=max_tokens,
                           n_predict=max_new_tokens,
                           repeat_last_n=64 if repetition_penalty != 1.0 else 0,
                           repeat_penalty=repetition_penalty,
@@ -117,7 +119,8 @@ def get_llm_gpt4all(model_name,
         cls = H2OLlamaCpp
         model_path = env_kwargs.pop('model_path_llama') if model is None else model
         model_kwargs = get_model_kwargs(env_kwargs, default_kwargs, cls, exclude_list=['lc_kwargs'])
-        model_kwargs.update(dict(model_path=model_path, callbacks=callbacks, streaming=streaming, prompter=prompter))
+        model_kwargs.update(dict(model_path=model_path, callbacks=callbacks, streaming=streaming,
+                                 prompter=prompter, context=context, iinput=iinput))
         llm = cls(**model_kwargs)
         llm.client.verbose = verbose
     elif model_name == 'gpt4all_llama':
@@ -125,14 +128,16 @@ def get_llm_gpt4all(model_name,
         model_path = env_kwargs.pop('model_path_gpt4all_llama') if model is None else model
         model_kwargs = get_model_kwargs(env_kwargs, default_kwargs, cls, exclude_list=['lc_kwargs'])
         model_kwargs.update(
-            dict(model=model_path, backend='llama', callbacks=callbacks, streaming=streaming, prompter=prompter))
+            dict(model=model_path, backend='llama', callbacks=callbacks, streaming=streaming,
+                 prompter=prompter, context=context, iinput=iinput))
         llm = cls(**model_kwargs)
     elif model_name == 'gptj':
         cls = H2OGPT4All
         model_path = env_kwargs.pop('model_path_gptj') if model is None else model
         model_kwargs = get_model_kwargs(env_kwargs, default_kwargs, cls, exclude_list=['lc_kwargs'])
         model_kwargs.update(
-            dict(model=model_path, backend='gptj', callbacks=callbacks, streaming=streaming, prompter=prompter))
+            dict(model=model_path, backend='gptj', callbacks=callbacks, streaming=streaming,
+                 prompter=prompter, context=context, iinput=iinput))
         llm = cls(**model_kwargs)
     else:
         raise RuntimeError("No such model_name %s" % model_name)
@@ -142,6 +147,8 @@ def get_llm_gpt4all(model_name,
 class H2OGPT4All(gpt4all.GPT4All):
     model: Any
     prompter: Any
+    context: Any = ''
+    iinput: Any = ''
     """Path to the pre-trained GPT4All model file."""
 
     @root_validator()
@@ -187,10 +194,11 @@ class H2OGPT4All(gpt4all.GPT4All):
             **kwargs,
     ) -> str:
         # Roughly 4 chars per token if natural language
-        prompt = prompt[-self.n_ctx * 4:]
+        n_ctx = 2048
+        prompt = prompt[-self.max_tokens * 4:]
 
         # use instruct prompting
-        data_point = dict(context='', instruction=prompt, input='')
+        data_point = dict(context=self.context, instruction=prompt, input=self.iinput)
         prompt = self.prompter.generate_prompt(data_point)
 
         verbose = False
@@ -206,6 +214,8 @@ from langchain.llms import LlamaCpp
 class H2OLlamaCpp(LlamaCpp):
     model_path: Any
     prompter: Any
+    context: Any
+    iinput: Any
     """Path to the pre-trained GPT4All model file."""
 
     @root_validator()
@@ -276,7 +286,7 @@ class H2OLlamaCpp(LlamaCpp):
                 print("reduced tokens from %d -> %d" % (num_prompt_tokens, num_prompt_tokens2), flush=True)
 
         # use instruct prompting
-        data_point = dict(context='', instruction=prompt, input='')
+        data_point = dict(context=self.context, instruction=prompt, input=self.iinput)
         prompt = self.prompter.generate_prompt(data_point)
 
         if verbose:

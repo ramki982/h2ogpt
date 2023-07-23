@@ -47,6 +47,24 @@
 
 4. Open `https://localhost:7860` in the browser
 
+
+
+### Run h2oGPT using Docker
+__Optional: Running with a custom entrypoint__
+
+To run with a custom entrypoint, modify the local [`run-gpt.sh`](https://github.com/h2oai/h2ogpt/blob/76947c009a82d7a4a871548e68a60ce0a28b75d1/run-gpt.sh) & mount it.
+
+```bash
+docker run \
+    --runtime=nvidia --shm-size=64g \
+    -e HF_MODEL=h2oai/h2ogpt-gm-oasst1-en-2048-open-llama-7b \
+    -p 8888:8888 -p 7860:7860 \
+    --rm --init \
+    -v `pwd`/h2ogpt_env:/h2ogpt_env \
+    -v `pwd`/run-gpt.sh:/run-gpt.sh \
+    gcr.io/vorvan/h2oai/h2ogpt-runtime:61d6aea6fff3b1190aa42eee7fa10d6c
+```
+
 ### Docker Compose Setup & Inference
 
 1. (optional) Change desired model and weights under `environment` in the `docker-compose.yml`

@@ -4,6 +4,7 @@ import torch
 from evaluate_params import eval_func_param_names
 from gen import get_score_model, get_model, evaluate, check_locals
 from prompter import non_hf_types
+from src.enums import LangChainMode
 from utils import clear_torch_cache, NullContext, get_kwargs
 
 
@@ -16,7 +17,7 @@ def run_cli(  # for local function:
         load_gptq=None, use_safetensors=None,
         use_gpu_id=None, tokenizer_base_model=None,
         gpu_id=None, local_files_only=None, resume_download=None, use_auth_token=None,
-        trust_remote_code=None, offload_folder=None, compile_model=None,
+        trust_remote_code=None, offload_folder=None, rope_scaling=None, compile_model=None,
         # for some evaluate args
         stream_output=None, prompt_type=None, prompt_dict=None,
         temperature=None, top_p=None, top_k=None, num_beams=None,
@@ -28,13 +29,17 @@ def run_cli(  # for local function:
         # for evaluate kwargs
         src_lang=None, tgt_lang=None, concurrency_count=None, save_dir=None, sanitize_bot_response=None,
         model_state0=None,
+        langchain_modes0=None,
+        langchain_mode_paths0=None,
+        visible_langchain_modes0=None,
         max_max_new_tokens=None,
         is_public=None,
         max_max_time=None,
         raise_generate_gpu_exceptions=None, load_db_if_exists=None, use_llm_if_no_docs=None,
-        dbs=None, user_path=None,
+        my_db_state0=None, selection_docs_state0=None, dbs=None, langchain_modes=None, langchain_mode_paths=None,
         detect_user_path_changes_every_query=None,
-        use_openai_embedding=None, use_openai_model=None, hf_embedding_model=None,
+        use_openai_embedding=None, use_openai_model=None, hf_embedding_model=None, cut_distance=None,
+        add_chat_history_to_context=None,
         db_type=None, n_jobs=None, first_para=None, text_limit=None, verbose=None, cli=None, reverse_docs=None,
         use_cache=None,
         auto_reduce_chunks=None, max_chunks=None, model_lock=None, force_langchain_evaluate=None,
@@ -63,9 +68,9 @@ def run_cli(  # for local function:
                           inference_server=inference_server, prompt_type=prompt_type, prompt_dict=prompt_dict)
         model_state = dict(model=model, tokenizer=tokenizer, device=device)
         model_state.update(model_dict)
-        my_db_state = [None]
-        fun = partial(evaluate, model_state, my_db_state,
-                      **get_kwargs(evaluate, exclude_names=['model_state', 'my_db_state'] + eval_func_param_names,
+        fun = partial(evaluate, model_state, my_db_state0, selection_docs_state0,
+                      **get_kwargs(evaluate, exclude_names=['model_state', 'my_db_state',
+                                                            'selection_docs_state'] + eval_func_param_names,
                                    **locals()))
 
         example1 = examples[-1]  # pick reference example

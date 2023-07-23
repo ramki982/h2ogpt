@@ -46,18 +46,19 @@ All the buttons are also accessible via gradio client API.
 
 ### Data Collection of Sources
 Collections (defaults to value set by `--langchain_mode=` and visible items set by `--visible_langchain_modes`):
-* ChatLLM: Chat context used (if any) but no docs used
 * LLM: Single query-response, no chat context or docs used
 * UserData: Shared and persistent. Writable if `--allow_upload_to_user_data=True`. Rebuilt from path `--user_path` if set.
 * MyData: Private and non-persistent.  Writable if `--allow_upload_to_my_data=True`
 * ... Other collections can be added via code, but not currently addable from UI
 
-Choose a collection, and uploaded docs go there.  Or choose a collection to query it.  To ignore any docs, choose ChatLLM to include chat history, or LLM to ignore chat history too.  If you add document to, e.g., MyData, if you want to query that document, ensure to select collection MyData before submitting the query.
+* Chat History Checkbox: If selected, h2oGPT passes the chat history to the LLM (for LLM and document collections) 
+
+Choose a collection, and uploaded docs go there.  Or choose a collection to query it.  To ignore any docs, select "LLM".  If you add document to, e.g., MyData, if you want to query that document, ensure to select collection MyData before submitting the query.
 
 ### Document Subset:
 * Relevant: Choose to include all docs in chosen collection when chatting
-* Sources: Ignore the LLM, just return sources the vector database similarity search
-* All: Ignore LLM and similarity search, just show top_k_docs sources from selected (or all) documents
+* RelSources: Ignore the LLM, just return sources the vector database similarity search (i.e. relevant Sources)
+* TopKSources: Ignore LLM and similarity search, just show top_k_docs sources from selected (or all) documents (i.e. top_k_docs Sources)
 
 The most normal task is keep it on `Relevant` and just make a query, which will query all documents in the chosen collection.
 

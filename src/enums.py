@@ -32,25 +32,29 @@ class PromptType(Enum):
     mptchat = 26
     falcon = 27
     guanaco = 28
+    llama2 = 29
 
 
-class DocumentChoices(Enum):
+class DocumentSubset(Enum):
     Relevant = 0
-    Sources = 1
-    All = 2
+    RelSources = 1
+    TopKSources = 2
 
 
 non_query_commands = [
-    DocumentChoices.Sources.name,
-    DocumentChoices.All.name
+    DocumentSubset.RelSources.name,
+    DocumentSubset.TopKSources.name
 ]
+
+
+class DocumentChoice(Enum):
+    ALL = 'All'
 
 
 class LangChainMode(Enum):
     """LangChain mode"""
 
     DISABLED = "Disabled"
-    CHAT_LLM = "ChatLLM"
     LLM = "LLM"
     ALL = "All"
     WIKI = "wiki"
@@ -59,6 +63,12 @@ class LangChainMode(Enum):
     MY_DATA = "MyData"
     GITHUB_H2OGPT = "github h2oGPT"
     H2O_DAI_DOCS = "DriverlessAI docs"
+
+
+# modes should not be removed from visible list or added by name
+langchain_modes_intrinsic = [LangChainMode.DISABLED.value,
+                             LangChainMode.LLM.value,
+                             LangChainMode.MY_DATA.value]
 
 
 class LangChainAction(Enum):

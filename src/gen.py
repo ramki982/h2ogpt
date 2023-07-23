@@ -8,7 +8,6 @@ import sys
 import os
 import time
 import traceback
-import types
 import typing
 import warnings
 from datetime import datetime
@@ -28,12 +27,12 @@ os.environ['BITSANDBYTES_NOWELCOME'] = '1'
 warnings.filterwarnings('ignore', category=UserWarning, message='TypedStorage is deprecated')
 
 from evaluate_params import eval_func_param_names, no_default_param_names
-from enums import DocumentChoices, LangChainMode, no_lora_str, model_token_mapping, no_model_str, source_prefix, \
-    source_postfix, LangChainAction, LangChainAgent
+from enums import DocumentSubset, LangChainMode, no_lora_str, model_token_mapping, no_model_str, source_prefix, \
+    source_postfix, LangChainAction, LangChainAgent, DocumentChoice
 from loaders import get_loaders
 from utils import set_seed, clear_torch_cache, save_generate_output, NullContext, wrapped_partial, EThread, get_githash, \
     import_matplotlib, get_device, makedirs, get_kwargs, start_faulthandler, get_hf_server, FakeTokenizer, remove, \
-    have_langchain
+    have_langchain, set_openai, load_collection_enum
 
 start_faulthandler()
 import_matplotlib()
@@ -49,8 +48,6 @@ from transformers import GenerationConfig, AutoModel, TextIteratorStreamer
 
 from prompter import Prompter, inv_prompt_type_to_model_lower, non_hf_types, PromptType, get_prompt, generate_prompt
 from stopping import get_stopping
-
-langchain_modes = [x.value for x in list(LangChainMode)]
 
 langchain_actions = [x.value for x in list(LangChainAction)]
 
@@ -101,6 +98,7 @@ def main(
         resume_download: bool = True,
         use_auth_token: Union[str, bool] = False,
         trust_remote_code: Union[str, bool] = True,
+        rope_scaling: dict = None,
         offload_folder: str = "offline_folder",
 
         src_lang: str = "English",
@@ -116,6 +114,7 @@ def main(
         show_examples: bool = None,
         verbose: bool = False,
         h2ocolors: bool = True,
+        dark: bool = False,  # light tends to be best
         height: int = 600,
         show_lora: bool = True,
         login_mode_if_model0: bool = False,
@@ -147,23 +146,29 @@ def main(
         langchain_action: str = LangChainAction.QUERY.value,
         langchain_agents: list = [],
         force_langchain_evaluate: bool = False,
+        langchain_modes: list = [x.value for x in list(LangChainMode)],
         visible_langchain_modes: list = ['UserData', 'MyData'],
         # WIP:
         # visible_langchain_actions: list = langchain_actions.copy(),
         visible_langchain_actions: list = [LangChainAction.QUERY.value, LangChainAction.SUMMARIZE_MAP.value],
         visible_langchain_agents: list = langchain_agents_list.copy(),
-        document_subset: str = DocumentChoices.Relevant.name,
-        document_choice: list = [],
+        document_subset: str = DocumentSubset.Relevant.name,
+        document_choice: list = [DocumentChoice.ALL.value],
         user_path: str = None,
+        langchain_mode_paths: dict = {'UserData': None},
         detect_user_path_changes_every_query: bool = False,
         use_llm_if_no_docs: bool = False,
         load_db_if_exists: bool = True,
         keep_sources_in_context: bool = False,
+        use_system_prompt: bool = False,
         db_type: str = 'chroma',
         use_openai_embedding: bool = False,
         use_openai_model: bool = False,
         hf_embedding_model: str = None,
+        cut_distance: float = 1.64,
+        add_chat_history_to_context: bool = True,
         allow_upload_to_user_data: bool = True,
+        reload_langchain_state: bool = True,
         allow_upload_to_my_data: bool = True,
         enable_url_upload: bool = True,
         enable_text_upload: bool = True,
@@ -180,6 +185,7 @@ def main(
         pre_load_caption_model: bool = False,
         caption_gpu: bool = True,
         enable_ocr: bool = False,
+        enable_pdf_ocr: str = 'auto',
 ):
     """
 
@@ -201,6 +207,8 @@ def main(
                              Or Address can be "openai_chat" or "openai" for OpenAI API
                              e.g. python generate.py --inference_server="openai_chat" --base_model=gpt-3.5-turbo
                              e.g. python generate.py --inference_server="openai" --base_model=text-davinci-003
+                             Or Address can be "vllm:IP:port" or "vllm:IP:port" for OpenAI-compliant vLLM endpoint
+                             Note: vllm_chat not supported by vLLM project.
     :param prompt_type: type of prompt, usually matched to fine-tuned model or plain for foundational model
     :param prompt_dict: If prompt_type=custom, then expects (some) items returned by get_prompt(..., return_dict=True)
     :param model_lock: Lock models to specific combinations, for ease of use and extending to many models
@@ -238,6 +246,7 @@ def main(
     :param resume_download: whether to resume downloads from HF for models
     :param use_auth_token: whether to use HF auth token (requires CLI did huggingface-cli login before)
     :param trust_remote_code: whether to use trust any code needed for HF model
+    :param rope_scaling: scaling for rope-based models, e.g. "{'type':'dynamic', 'factor':4}"
     :param offload_folder: path for spilling model onto disk
     :param src_lang: source languages to include if doing translation (None = all)
     :param tgt_lang: target languages to include if doing translation (None = all)
@@ -257,6 +266,7 @@ def main(
     :param show_examples: whether to show clickable examples in gradio
     :param verbose: whether to show verbose prints
     :param h2ocolors: whether to use H2O.ai theme
+    :param dark: whether to use dark mode for UI by default (still controlled in UI)
     :param height: height of chat window
     :param show_lora: whether to show LORA options in UI (expert so can be hard to understand)
     :param login_mode_if_model0: set to True to load --base_model after client logs in, to be able to free GPU memory when model is swapped
@@ -285,7 +295,7 @@ def main(
     :param eval_prompts_only_seed: for no gradio benchmark, seed for eval_filename sampling
     :param eval_as_output: for no gradio benchmark, whether to test eval_filename output itself
     :param langchain_mode: Data source to include.  Choose "UserData" to only consume files from make_db.py.
-           None: auto mode, check if langchain package exists, at least do ChatLLM if so, else Disabled
+           None: auto mode, check if langchain package exists, at least do LLM if so, else Disabled
            WARNING: wiki_full requires extra data processing via read_wiki_full.py and requires really good workstation to generate db, unless already present.
     :param langchain_action: Mode langchain operations in on documents.
             Query: Make query of document(s)
@@ -297,35 +307,53 @@ def main(
     :param force_langchain_evaluate: Whether to force langchain LLM use even if not doing langchain, mostly for testing.
     :param user_path: user path to glob from to generate db for vector search, for 'UserData' langchain mode.
            If already have db, any new/changed files are added automatically if path set, does not have to be same path used for prior db sources
+    :param langchain_mode_paths: dict of langchain_mode keys and disk path values to use for source of documents
+           E.g. "{'UserData2': 'userpath2'}"
+           Can be None even if existing DB, to avoid new documents being added from that path, source links that are on disk still work.
+           If user_path is not None, that path is used for 'UserData' instead of the value in this dict
     :param detect_user_path_changes_every_query: whether to detect if any files changed or added every similarity search (by file hashes).
            Expensive for large number of files, so not done by default.  By default only detect changes during db loading.
+    :param langchain_modes: names of collections/dbs to potentially have
     :param visible_langchain_modes: dbs to generate at launch to be ready for LLM
            Can be up to ['wiki', 'wiki_full', 'UserData', 'MyData', 'github h2oGPT', 'DriverlessAI docs']
            But wiki_full is expensive and requires preparation
            To allow scratch space only live in session, add 'MyData' to list
            Default: If only want to consume local files, e.g. prepared by make_db.py, only include ['UserData']
+           If have own user modes, need to add these here or add in UI.
+           A state file is stored in visible_langchain_modes.pkl containing last UI-selected values of:
+              langchain_modes, visible_langchain_modes, and langchain_mode_paths
+              Delete the file if you want to start fresh,
+              but in any case the user_path passed in CLI is used for UserData even if was None or different
     :param visible_langchain_actions: Which actions to allow
     :param visible_langchain_agents: Which agents to allow
     :param document_subset: Default document choice when taking subset of collection
-    :param document_choice: Chosen document(s) by internal name
-    :param use_llm_if_no_docs: Whether to use LLM even if no documents, when langchain_mode=UserData or MyData
+    :param document_choice: Chosen document(s) by internal name, 'All' means use all docs
+    :param use_llm_if_no_docs: Whether to use LLM even if no documents, when langchain_mode=UserData or MyData or custom
     :param load_db_if_exists: Whether to load chroma db if exists or re-generate db
     :param keep_sources_in_context: Whether to keep url sources in context, not helpful usually
+    :param use_system_prompt: Whether to use system prompt (e.g. llama2 safe system prompt)
     :param db_type: 'faiss' for in-memory or 'chroma' or 'weaviate' for persisted on disk
     :param use_openai_embedding: Whether to use OpenAI embeddings for vector db
     :param use_openai_model: Whether to use OpenAI model for use with vector db
     :param hf_embedding_model: Which HF embedding model to use for vector db
-           Default is instructor-large with 768 parameters per embedding if have GPUs, else all-MiniLM-L6-v1 if no GPUs
+           Default is instructor-large with 768 parameters per embedding if have GPUs, else all-MiniLM-L6-v2 if no GPUs
            Can also choose simpler model with 384 parameters per embedding: "sentence-transformers/all-MiniLM-L6-v2"
            Can also choose even better embedding with 1024 parameters: 'hkunlp/instructor-xl'
            We support automatically changing of embeddings for chroma, with a backup of db made if this is done
-    :param allow_upload_to_user_data: Whether to allow file uploads to update shared vector db
+    :param cut_distance: Distance to cut off references with larger distances when showing references.
+           1.64 is good to avoid dropping references for all-MiniLM-L6-v2, but instructor-large will always show excessive references.
+           For all-MiniLM-L6-v2, a value of 1.5 can push out even more references, or a large value of 100 can avoid any loss of references.
+    :param add_chat_history_to_context: Include chat context when performing action
+           Not supported yet for openai_chat when using document collection instead of LLM
+           Also not supported when using CLI mode
+    :param allow_upload_to_user_data: Whether to allow file uploads to update shared vector db (UserData or custom user dbs)
+    :param reload_langchain_state: Whether to reload visible_langchain_modes.pkl file that contains any new user collections.
     :param allow_upload_to_my_data: Whether to allow file uploads to update scratch vector db
     :param enable_url_upload: Whether to allow upload from URL
     :param enable_text_upload: Whether to allow upload of text
     :param enable_sources_list: Whether to allow list (or download for non-shared db) of list of sources for chosen db
     :param chunk: Whether to chunk data (True unless know data is already optimally chunked)
-    :param chunk_size: Size of chunks, with typically top-4 passed to LLM, so neesd to be in context length
+    :param chunk_size: Size of chunks, with typically top-4 passed to LLM, so needs to be in context length
     :param top_k_docs: number of chunks to give LLM
     :param reverse_docs: whether to reverse docs order so most relevant is closest to question.
            Best choice for sufficiently smart model, and truncation occurs for oldest context, so best then too.
@@ -345,6 +373,9 @@ def main(
            Recommended if using larger caption model
     :param caption_gpu: If support caption, then use GPU if exists
     :param enable_ocr: Whether to support OCR on images
+    :param enable_pdf_ocr: 'auto' means only use OCR if normal text extraction fails.  Useful for pure image-based PDFs with text
+                            'on' means always do OCR as additional parsing of same documents
+                            'off' means don't do OCR (e.g. because it's slow even if 'auto' only would trigger if nothing else worked)
     :return:
     """
     if base_model is None:
@@ -388,6 +419,9 @@ def main(
     # but becomes unrecoverable sometimes if raise, so just be silent for now
     raise_generate_gpu_exceptions = True
 
+    if isinstance(rope_scaling, str):
+        rope_scaling = ast.literal_eval(rope_scaling)
+
     # allow set token directly
     use_auth_token = os.environ.get("HUGGINGFACE_API_TOKEN", use_auth_token)
     allow_upload_to_user_data = bool(
@@ -406,8 +440,29 @@ def main(
         if langchain_mode is not None:
             visible_langchain_modes += [langchain_mode]
 
+    # update
+    if isinstance(langchain_mode_paths, str):
+        langchain_mode_paths = ast.literal_eval(langchain_mode_paths)
+        assert isinstance(langchain_mode_paths, dict)
+    if user_path:
+        langchain_mode_paths['UserData'] = user_path
+        makedirs(user_path)
+
+    if is_public:
+        allow_upload_to_user_data = False
+        if LangChainMode.USER_DATA.value in visible_langchain_modes:
+            visible_langchain_modes.remove(LangChainMode.USER_DATA.value)
+
+    # in-place, for non-scratch dbs
+    if allow_upload_to_user_data:
+        update_langchain(langchain_modes, visible_langchain_modes, langchain_mode_paths, '')
+        # always listen to CLI-passed user_path if passed
+        if user_path:
+            langchain_mode_paths['UserData'] = user_path
+
     assert langchain_action in langchain_actions, "Invalid langchain_action %s" % langchain_action
-    assert len(set(langchain_agents).difference(langchain_agents_list)) == 0, "Invalid langchain_agents %s" % langchain_agents
+    assert len(
+        set(langchain_agents).difference(langchain_agents_list)) == 0, "Invalid langchain_agents %s" % langchain_agents
 
     # if specifically chose not to show My or User Data, disable upload, so gradio elements are simpler
     if LangChainMode.MY_DATA.value not in visible_langchain_modes:
@@ -418,21 +473,22 @@ def main(
     # auto-set langchain_mode
     if have_langchain and langchain_mode is None:
         # start in chat mode, in case just want to chat and don't want to get "No documents to query" by default.
-        langchain_mode = LangChainMode.CHAT_LLM.value
-        if allow_upload_to_user_data and not is_public and user_path:
+        langchain_mode = LangChainMode.LLM.value
+        if allow_upload_to_user_data and not is_public and langchain_mode_paths['UserData']:
             print("Auto set langchain_mode=%s.  Could use UserData instead." % langchain_mode, flush=True)
         elif allow_upload_to_my_data:
             print("Auto set langchain_mode=%s.  Could use MyData instead."
                   "  To allow UserData to pull files from disk,"
-                  " set user_path and ensure allow_upload_to_user_data=True" % langchain_mode, flush=True)
+                  " set user_path or langchain_mode_paths, and ensure allow_upload_to_user_data=True" % langchain_mode,
+                  flush=True)
         else:
             raise RuntimeError("Please pass --langchain_mode=<chosen mode> out of %s" % langchain_modes)
-    if not have_langchain and langchain_mode not in [None, LangChainMode.DISABLED.value, LangChainMode.LLM.value, LangChainMode.CHAT_LLM.value]:
+    if not have_langchain and langchain_mode not in [None, LangChainMode.DISABLED.value, LangChainMode.LLM.value]:
         raise RuntimeError("Asked for LangChain mode but langchain python package cannot be found.")
     if langchain_mode is None:
         # if not set yet, disable
         langchain_mode = LangChainMode.DISABLED.value
-        print("Auto set langchain_mode=%s" % langchain_mode, flush=True)
+        print("Auto set langchain_mode=%s  Have langchain package: %s" % (langchain_mode, have_langchain), flush=True)
 
     if is_public:
         allow_upload_to_user_data = False
@@ -494,8 +550,9 @@ def main(
     api_open = bool(int(os.getenv('API_OPEN', str(int(api_open)))))
     allow_api = bool(int(os.getenv('ALLOW_API', str(int(allow_api)))))
 
-    n_gpus = torch.cuda.device_count() if torch.cuda.is_available else 0
+    n_gpus = torch.cuda.device_count() if torch.cuda.is_available() else 0
     if n_gpus == 0:
+        print("No GPUs detected", flush=True)
         enable_captions = False
         gpu_id = None
         load_8bit = False
@@ -543,8 +600,6 @@ def main(
 
     if offload_folder:
         makedirs(offload_folder)
-    if user_path:
-        makedirs(user_path)
 
     placeholder_instruction, placeholder_input, \
         stream_output, show_examples, \
@@ -570,7 +625,7 @@ def main(
                             verbose,
                             )
 
-    git_hash = get_githash()
+    git_hash = get_githash() if is_public or os.getenv('GET_GITHASH') else "GET_GITHASH"
     locals_dict = locals()
     locals_print = '\n'.join(['%s: %s' % (k, v) for k, v in locals_dict.items()])
     if verbose:
@@ -584,7 +639,7 @@ def main(
             get_some_dbs_from_hf()
         dbs = {}
         for langchain_mode1 in visible_langchain_modes:
-            if langchain_mode1 in ['MyData']:
+            if langchain_mode1 in ['MyData']:  # FIXME: Remove other custom temp dbs
                 # don't use what is on disk, remove it instead
                 for gpath1 in glob.glob(os.path.join(scratch_base_dir, 'db_dir_%s*' % langchain_mode1)):
                     if os.path.isdir(gpath1):
@@ -599,7 +654,7 @@ def main(
                 db = prep_langchain(persist_directory1,
                                     load_db_if_exists,
                                     db_type, use_openai_embedding,
-                                    langchain_mode1, user_path,
+                                    langchain_mode1, langchain_mode_paths,
                                     hf_embedding_model,
                                     kwargs_make_db=locals())
             finally:
@@ -618,6 +673,14 @@ def main(
     model_state_none = dict(model=None, tokenizer=None, device=None,
                             base_model=None, tokenizer_base_model=None, lora_weights=None,
                             inference_server=None, prompt_type=None, prompt_dict=None)
+    my_db_state0 = {LangChainMode.MY_DATA.value: [None, None]}
+    selection_docs_state0 = dict(visible_langchain_modes=visible_langchain_modes,
+                                 langchain_mode_paths=langchain_mode_paths,
+                                 langchain_modes=langchain_modes)
+    selection_docs_state = selection_docs_state0
+    langchain_modes0 = langchain_modes
+    langchain_mode_paths0 = langchain_mode_paths
+    visible_langchain_modes0 = visible_langchain_modes
 
     if cli:
         from cli import run_cli
@@ -716,6 +779,7 @@ def get_config(base_model,
                use_auth_token=False,
                trust_remote_code=True,
                offload_folder=None,
+               rope_scaling=None,
                triton_attn=False,
                long_sequence=True,
                return_model=False,
@@ -727,7 +791,8 @@ def get_config(base_model,
         try:
             config = AutoConfig.from_pretrained(base_model, use_auth_token=use_auth_token,
                                                 trust_remote_code=trust_remote_code,
-                                                offload_folder=offload_folder)
+                                                offload_folder=offload_folder,
+                                                rope_scaling=rope_scaling)
         except OSError as e:
             if raise_exception:
                 raise
@@ -816,6 +881,8 @@ def get_non_lora_model(base_model, model_loader, load_half,
     pop_unused_model_kwargs(model_kwargs)
 
     if load_gptq:
+        if 'Llama-2-70B-chat-GPTQ' in base_model:
+            model_kwargs.update(dict(inject_fused_attention=False))
         model_kwargs.pop('torch_dtype', None)
         model_kwargs.pop('device_map')
         model = model_loader(
@@ -903,6 +970,7 @@ def get_model(
         use_auth_token: Union[str, bool] = False,
         trust_remote_code: bool = True,
         offload_folder: str = None,
+        rope_scaling: dict = None,
         compile_model: bool = True,
 
         verbose: bool = False,
@@ -928,6 +996,7 @@ def get_model(
     :param use_auth_token: assumes user did on CLI `huggingface-cli login` to access private repo
     :param trust_remote_code: trust code needed by model
     :param offload_folder: offload folder
+    :param rope_scaling: scaling for rope-based models, e.g. "{'type':'dynamic', 'factor':4}"
     :param compile_model: whether to compile torch model
     :param verbose:
     :return:
@@ -939,6 +1008,7 @@ def get_model(
     config_kwargs = dict(use_auth_token=use_auth_token,
                          trust_remote_code=trust_remote_code,
                          offload_folder=offload_folder,
+                         rope_scaling=rope_scaling,
                          triton_attn=triton_attn,
                          long_sequence=long_sequence)
     config, _ = get_config(base_model, **config_kwargs, raise_exception=False)
@@ -949,7 +1019,7 @@ def get_model(
     llama_type_from_config = 'llama' in str(config).lower()
     llama_type_from_name = "llama" in base_model.lower()
     llama_type = llama_type_from_config or llama_type_from_name
-    if "xgen" in base_model.lower():
+    if "xgen" in base_model.lower() or 'llama2' in base_model.lower() or 'llama-2' in base_model.lower():
         llama_type = False
     if llama_type:
         if verbose:
@@ -986,11 +1056,13 @@ def get_model(
         client = gr_client or hf_client
         # Don't return None, None for model, tokenizer so triggers
         return client, tokenizer, 'http'
-    if isinstance(inference_server, str) and inference_server.startswith('openai'):
-        assert os.getenv('OPENAI_API_KEY'), "Set environment for OPENAI_API_KEY"
-        # Don't return None, None for model, tokenizer so triggers
-        # include small token cushion
-        tokenizer = FakeTokenizer(model_max_length=model_token_mapping[base_model] - 50)
+    if isinstance(inference_server, str) and (
+            inference_server.startswith('openai') or inference_server.startswith('vllm')):
+        if inference_server.startswith('openai'):
+            assert os.getenv('OPENAI_API_KEY'), "Set environment for OPENAI_API_KEY"
+            # Don't return None, None for model, tokenizer so triggers
+            # include small token cushion
+            tokenizer = FakeTokenizer(model_max_length=model_token_mapping[base_model] - 50)
         return inference_server, tokenizer, inference_server
     assert not inference_server, "Malformed inference_server=%s" % inference_server
     if base_model in non_hf_types:
@@ -1016,6 +1088,7 @@ def get_model(
                         use_auth_token=use_auth_token,
                         trust_remote_code=trust_remote_code,
                         offload_folder=offload_folder,
+                        rope_scaling=rope_scaling,
                         compile_model=compile_model,
 
                         llama_type=llama_type,
@@ -1042,6 +1115,7 @@ def get_hf_model(load_8bit: bool = False,
                  use_auth_token: Union[str, bool] = False,
                  trust_remote_code: bool = True,
                  offload_folder: str = None,
+                 rope_scaling: dict = None,
                  compile_model: bool = True,
 
                  llama_type: bool = False,
@@ -1092,6 +1166,7 @@ def get_hf_model(load_8bit: bool = False,
                             use_auth_token=use_auth_token,
                             trust_remote_code=trust_remote_code,
                             offload_folder=offload_folder,
+                            # rope_scaling=rope_scaling,  # only put into config
                             )
         if 'mbart-' not in base_model.lower() and 'mpt-' not in base_model.lower():
             if use_gpu_id and gpu_id is not None and gpu_id >= 0 and device == 'cuda':
@@ -1153,6 +1228,7 @@ def get_hf_model(load_8bit: bool = False,
                 use_auth_token=use_auth_token,
                 trust_remote_code=trust_remote_code,
                 offload_folder=offload_folder,
+                rope_scaling=rope_scaling,
                 device_map={"": 0} if device == 'cuda' else {"": 'cpu'},  # seems to be required
             )
         else:
@@ -1173,6 +1249,7 @@ def get_hf_model(load_8bit: bool = False,
                     use_auth_token=use_auth_token,
                     trust_remote_code=trust_remote_code,
                     offload_folder=offload_folder,
+                    rope_scaling=rope_scaling,
                     device_map="auto",
                 )
                 if load_half and not load_gptq:
@@ -1248,6 +1325,7 @@ def get_score_model(score_model: str = None,
                     use_auth_token: Union[str, bool] = False,
                     trust_remote_code: bool = True,
                     offload_folder: str = None,
+                    rope_scaling: dict = None,
                     compile_model: bool = True,
 
                     verbose: bool = False,
@@ -1274,6 +1352,7 @@ def get_score_model(score_model: str = None,
 def evaluate(
         model_state,
         my_db_state,
+        selection_docs_state,
         # START NOTE: Examples must have same order of parameters
         instruction,
         iinput,
@@ -1296,6 +1375,7 @@ def evaluate(
         instruction_nochat,
         iinput_nochat,
         langchain_mode,
+        add_chat_history_to_context,
         langchain_action,
         langchain_agents,
         top_k_docs,
@@ -1311,6 +1391,9 @@ def evaluate(
         save_dir=None,
         sanitize_bot_response=False,
         model_state0=None,
+        langchain_modes0=None,
+        langchain_mode_paths0=None,
+        visible_langchain_modes0=None,
         memory_restriction_level=None,
         max_max_new_tokens=None,
         is_public=None,
@@ -1321,11 +1404,11 @@ def evaluate(
         use_llm_if_no_docs=False,
         load_db_if_exists=True,
         dbs=None,
-        user_path=None,
         detect_user_path_changes_every_query=None,
         use_openai_embedding=None,
         use_openai_model=None,
         hf_embedding_model=None,
+        cut_distance=None,
         db_type=None,
         n_jobs=None,
         first_para=None,
@@ -1354,6 +1437,16 @@ def evaluate(
     assert chunk_size is not None and isinstance(chunk_size, int)
     assert n_jobs is not None
     assert first_para is not None
+    assert isinstance(add_chat_history_to_context, bool)
+
+    if selection_docs_state is not None:
+        langchain_modes = selection_docs_state.get('langchain_modes', langchain_modes0)
+        langchain_mode_paths = selection_docs_state.get('langchain_mode_paths', langchain_mode_paths0)
+        visible_langchain_modes = selection_docs_state.get('visible_langchain_modes', visible_langchain_modes0)
+    else:
+        langchain_modes = langchain_modes0
+        langchain_mode_paths = langchain_mode_paths0
+        visible_langchain_modes = visible_langchain_modes0
 
     if debug:
         locals_dict = locals().copy()
@@ -1473,19 +1566,24 @@ def evaluate(
     # THIRD PLACE where LangChain referenced, but imports only occur if enabled and have db to use
     assert langchain_mode in langchain_modes, "Invalid langchain_mode %s" % langchain_mode
     assert langchain_action in langchain_actions, "Invalid langchain_action %s" % langchain_action
-    assert len(set(langchain_agents).difference(langchain_agents_list)) == 0, "Invalid langchain_agents %s" % langchain_agents
-    if langchain_mode in ['MyData'] and my_db_state is not None and len(my_db_state) > 0 and my_db_state[0] is not None:
-        db1 = my_db_state[0]
-    elif dbs is not None and langchain_mode in dbs:
-        db1 = dbs[langchain_mode]
+    assert len(
+        set(langchain_agents).difference(langchain_agents_list)) == 0, "Invalid langchain_agents %s" % langchain_agents
+    if dbs is not None and langchain_mode in dbs:
+        db = dbs[langchain_mode]
+    elif my_db_state is not None and langchain_mode in my_db_state:
+        db1 = my_db_state[langchain_mode]
+        if db1 is not None and len(db1) == 2:
+            db = db1[0]
+        else:
+            db = None
     else:
-        db1 = None
-    do_langchain_path = langchain_mode not in [False, 'Disabled', 'ChatLLM', 'LLM'] or \
+        db = None
+    do_langchain_path = langchain_mode not in [False, 'Disabled', 'LLM'] or \
                         base_model in non_hf_types or \
                         force_langchain_evaluate
     if do_langchain_path:
         outr = ""
-        # use smaller cut_distanct for wiki_full since so many matches could be obtained, and often irrelevant unless close
+        # use smaller cut_distance for wiki_full since so many matches could be obtained, and often irrelevant unless close
         from gpt_langchain import run_qa_db
         gen_hyper_langchain = dict(do_sample=do_sample,
                                    temperature=temperature,
@@ -1508,10 +1606,11 @@ def evaluate(
                            prompter=prompter,
                            use_llm_if_no_docs=use_llm_if_no_docs,
                            load_db_if_exists=load_db_if_exists,
-                           db=db1,
-                           user_path=user_path,
+                           db=db,
+                           langchain_mode_paths=langchain_mode_paths,
                            detect_user_path_changes_every_query=detect_user_path_changes_every_query,
-                           cut_distanct=1.1 if langchain_mode in ['wiki_full'] else 1.64,  # FIXME, too arbitrary
+                           cut_distance=1.1 if langchain_mode in ['wiki_full'] else cut_distance,
+                           add_chat_history_to_context=add_chat_history_to_context,
                            use_openai_embedding=use_openai_embedding,
                            use_openai_model=use_openai_model,
                            hf_embedding_model=hf_embedding_model,
@@ -1574,12 +1673,12 @@ def evaluate(
             clear_torch_cache()
             return
 
-    if inference_server.startswith('openai') or inference_server.startswith('http'):
-        if inference_server.startswith('openai'):
-            import openai
+    if inference_server.startswith('vllm') or inference_server.startswith('openai') or inference_server.startswith(
+            'http'):
+        if inference_server.startswith('vllm') or inference_server.startswith('openai'):
             where_from = "openai_client"
+            openai, inf_type = set_openai(inference_server)
 
-            openai.api_key = os.getenv("OPENAI_API_KEY")
             terminate_response = prompter.terminate_response or []
             stop_sequences = list(set(terminate_response + [prompter.PreResponse]))
             stop_sequences = [x for x in stop_sequences if x]
@@ -1592,7 +1691,7 @@ def evaluate(
                                      n=num_return_sequences,
                                      presence_penalty=1.07 - repetition_penalty + 0.6,  # so good default
                                      )
-            if inference_server == 'openai':
+            if inf_type == 'vllm' or inference_server == 'openai':
                 response = openai.Completion.create(
                     model=base_model,
                     prompt=prompt,
@@ -1615,7 +1714,9 @@ def evaluate(
                         yield dict(response=prompter.get_response(prompt + text, prompt=prompt,
                                                                   sanitize_bot_response=sanitize_bot_response),
                                    sources='')
-            elif inference_server == 'openai_chat':
+            elif inf_type == 'vllm_chat' or inference_server == 'openai_chat':
+                if inf_type == 'vllm_chat':
+                    raise NotImplementedError('%s not supported by vLLM' % inf_type)
                 response = openai.ChatCompletion.create(
                     model=base_model,
                     messages=[
@@ -1667,6 +1768,7 @@ def evaluate(
                 chat_client = False
                 where_from = "gr_client"
                 client_langchain_mode = 'Disabled'
+                client_add_chat_history_to_context = True
                 client_langchain_action = LangChainAction.QUERY.value
                 client_langchain_agents = []
                 gen_server_kwargs = dict(temperature=temperature,
@@ -1720,13 +1822,14 @@ def evaluate(
                                      instruction_nochat=gr_prompt if not chat_client else '',
                                      iinput_nochat=gr_iinput,  # only for chat=False
                                      langchain_mode=client_langchain_mode,
+                                     add_chat_history_to_context=client_add_chat_history_to_context,
                                      langchain_action=client_langchain_action,
                                      langchain_agents=client_langchain_agents,
                                      top_k_docs=top_k_docs,
                                      chunk=chunk,
                                      chunk_size=chunk_size,
-                                     document_subset=DocumentChoices.Relevant.name,
-                                     document_choice=[],
+                                     document_subset=DocumentSubset.Relevant.name,
+                                     document_choice=[DocumentChoice.ALL.value],
                                      )
                 api_name = '/submit_nochat_api'  # NOTE: like submit_nochat but stable API for string dict passing
                 if not stream_output:
@@ -1924,6 +2027,7 @@ def evaluate(
                                     **decoder_raw_kwargs
                                     )
 
+    t_generate = time.time()
     with torch.no_grad():
         have_lora_weights = lora_weights not in [no_lora_str, '', None]
         context_class_cast = NullContext if device == 'cpu' or have_lora_weights or device == 'mps' else torch.autocast
@@ -1998,29 +2102,36 @@ def evaluate(
                     if thread.exc:
                         raise thread.exc
                     decoded_output = outputs
+                    ntokens = len(outputs) // 4  # hack for now
                 else:
                     try:
                         outputs = model.generate(**gen_kwargs)
                     finally:
                         clear_torch_cache()  # has to be here for API submit_nochat_api since.then() not called
+                    ntokens = sum([len(s) for s in outputs.sequences]) if save_dir else -1
                     outputs = [decoder(s) for s in outputs.sequences]
+
                     yield dict(response=prompter.get_response(outputs, prompt=inputs_decoded,
                                                               sanitize_bot_response=sanitize_bot_response), sources='')
                     if outputs and len(outputs) >= 1:
                         decoded_output = prompt + outputs[0]
                 if save_dir and decoded_output:
                     extra_dict = gen_config_kwargs.copy()
-                    extra_dict.update(dict(num_prompt_tokens=num_prompt_tokens))
+                    extra_dict.update(dict(num_prompt_tokens=num_prompt_tokens,
+                                           t_generate=time.time() - t_generate,
+                                           ntokens=ntokens,
+                                           tokens_persecond=ntokens / (time.time() - t_generate),
+                                           ))
                     save_generate_output(prompt=prompt, output=decoded_output, base_model=base_model, save_dir=save_dir,
                                          where_from="evaluate_%s" % str(stream_output),
-                                         extra_dict=gen_config_kwargs)
+                                         extra_dict=extra_dict)
             if verbose:
                 print('Post-Generate: %s decoded_output: %s' % (
                     str(datetime.now()), len(decoded_output) if decoded_output else -1), flush=True)
 
 
 inputs_list_names = list(inspect.signature(evaluate).parameters)
-state_names = ['model_state', 'my_db_state']
+state_names = ['model_state', 'my_db_state', 'selection_docs_state']
 inputs_kwargs_list = [x for x in inputs_list_names if x not in eval_func_param_names + state_names]
 
 
@@ -2303,8 +2414,8 @@ y = np.random.randint(0, 1, 100)
 
     # move to correct position
     for example in examples:
-        example += [chat, '', '', LangChainMode.DISABLED.value, LangChainAction.QUERY.value, [],
-                    top_k_docs, chunk, chunk_size, DocumentChoices.Relevant.name, []
+        example += [chat, '', '', LangChainMode.DISABLED.value, True, LangChainAction.QUERY.value, [],
+                    top_k_docs, chunk, chunk_size, DocumentSubset.Relevant.name, []
                     ]
         # adjust examples if non-chat mode
         if not chat:
@@ -2364,7 +2475,7 @@ def score_qa(smodel, stokenizer, max_length_tokenize, question, answer, cutoff_l
                         truncation=True,
                         max_length=max_length_tokenize).to(smodel.device)
     try:
-        score = torch.sigmoid(smodel(**inputs).logits[0]).cpu().detach().numpy()[0]
+        score = torch.sigmoid(smodel(**inputs.to(smodel.device)).logits[0].float()).cpu().detach().numpy()[0]
     except torch.cuda.OutOfMemoryError as e:
         print("GPU OOM 3: question: %s answer: %s exception: %s" % (question, answer, str(e)), flush=True)
         del inputs
@@ -2449,35 +2560,43 @@ def get_minmax_top_k_docs(is_public):
     return min_top_k_docs, max_top_k_docs, label_top_k_docs
 
 
-def history_to_context(history, langchain_mode1, prompt_type1, prompt_dict1, chat1, model_max_length1,
-                       memory_restriction_level1, keep_sources_in_context1):
+def history_to_context(history, langchain_mode1,
+                       add_chat_history_to_context,
+                       prompt_type1, prompt_dict1, chat1, model_max_length1,
+                       memory_restriction_level1, keep_sources_in_context1,
+                       use_system_prompt1):
     """
     consumes all history up to (but not including) latest history item that is presumed to be an [instruction, None] pair
     :param history:
     :param langchain_mode1:
+    :param add_chat_history_to_context:
     :param prompt_type1:
     :param prompt_dict1:
     :param chat1:
     :param model_max_length1:
     :param memory_restriction_level1:
     :param keep_sources_in_context1:
+    :param use_system_prompt1:
     :return:
     """
     # ensure output will be unique to models
     _, _, _, max_prompt_length = get_cutoffs(memory_restriction_level1,
                                              for_context=True, model_max_length=model_max_length1)
     context1 = ''
-    if max_prompt_length is not None and langchain_mode1 not in ['LLM']:
+    if max_prompt_length is not None and add_chat_history_to_context:
         context1 = ''
         # - 1 below because current instruction already in history from user()
         for histi in range(0, len(history) - 1):
             data_point = dict(instruction=history[histi][0], input='', output=history[histi][1])
-            prompt, pre_response, terminate_response, chat_sep, chat_turn_sep = generate_prompt(data_point,
-                                                                                                prompt_type1,
-                                                                                                prompt_dict1,
-                                                                                                chat1,
-                                                                                                reduced=True,
-                                                                                                making_context=True)
+            prompt, pre_response, terminate_response, chat_sep, chat_turn_sep = \
+                generate_prompt(data_point,
+                                prompt_type1,
+                                prompt_dict1,
+                                chat1,
+                                reduced=True,
+                                making_context=True,
+                                use_system_prompt=use_system_prompt1,
+                                histi=histi)
             # md -> back to text, maybe not super important if model trained enough
             if not keep_sources_in_context1 and langchain_mode1 != 'Disabled' and prompt.find(source_prefix) >= 0:
                 # FIXME: This is relatively slow even for small amount of text, like 0.3s each history item
@@ -2495,12 +2614,31 @@ def history_to_context(history, langchain_mode1, prompt_type1, prompt_dict1, cha
                 break
             context1 += prompt
 
-        _, pre_response, terminate_response, chat_sep, chat_turn_sep = generate_prompt({}, prompt_type1, prompt_dict1,
-                                                                                       chat1, reduced=True,
-                                                                                       making_context=True)
+        _, pre_response, terminate_response, chat_sep, chat_turn_sep = \
+            generate_prompt({}, prompt_type1, prompt_dict1,
+                            chat1, reduced=True,
+                            making_context=True,
+                            use_system_prompt=use_system_prompt1,
+                            histi=-1)
         if context1 and not context1.endswith(chat_turn_sep):
             context1 += chat_turn_sep  # ensure if terminates abruptly, then human continues on next line
     return context1
+
+
+def update_langchain(langchain_modes, visible_langchain_modes, langchain_mode_paths, extra):
+    # update from saved state on disk
+    langchain_modes_from_file, visible_langchain_modes_from_file, langchain_mode_paths_from_file = \
+        load_collection_enum(extra)
+
+    visible_langchain_modes_temp = visible_langchain_modes.copy() + visible_langchain_modes_from_file
+    visible_langchain_modes.clear()  # don't lose original reference
+    [visible_langchain_modes.append(x) for x in visible_langchain_modes_temp if x not in visible_langchain_modes]
+
+    langchain_mode_paths.update(langchain_mode_paths_from_file)
+
+    langchain_modes_temp = langchain_modes.copy() + langchain_modes_from_file
+    langchain_modes.clear()  # don't lose original reference
+    [langchain_modes.append(x) for x in langchain_modes_temp if x not in langchain_modes]
 
 
 def entrypoint_main():
