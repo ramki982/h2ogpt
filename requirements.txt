@@ -63,3 +63,7 @@ text-generation==0.6.0
 tiktoken==0.4.0
 # optional: for OpenAI endpoint or embeddings (requires key)
 openai==0.27.8
+
+git+https://github.com/openai/whisper.git 
+
+setuptools-rust=1.6.0

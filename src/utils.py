@@ -943,6 +943,11 @@ def get_local_ip():
         s.close()
     return IP
 
+try:
+    assert pkg_resources.get_distribution('whisper') is not None
+    have_whisper = True
+except (pkg_resources.DistributionNotFound, AssertionError):
+    have_whisper = False
 
 try:
     assert pkg_resources.get_distribution('langchain') is not None

@@ -17,6 +17,7 @@ from datetime import datetime
 from functools import reduce
 from operator import concat
 import filelock
+import whisper
 
 from joblib import delayed
 from langchain.callbacks import streaming_stdout
@@ -30,7 +31,7 @@ from gen import get_model, SEED
 from prompter import non_hf_types, PromptType, Prompter
 from utils import wrapped_partial, EThread, import_matplotlib, sanitize_filename, makedirs, get_url, flatten_list, \
     get_device, ProgressParallel, remove, hash_file, clear_torch_cache, NullContext, get_hf_server, FakeTokenizer, \
-    have_libreoffice, have_arxiv, have_playwright, have_selenium, have_tesseract, have_pymupdf
+    have_libreoffice, have_arxiv, have_playwright, have_selenium, have_tesseract, have_pymupdf, have_whisper
 from utils_langchain import StreamingGradioCallbackHandler
 
 import_matplotlib()
@@ -910,7 +911,7 @@ def get_dai_docs(from_hf=False, get_pickle=True):
     return sources
 
 
-
+audio_types = ["wav", "mp3"]
 image_types = ["png", "jpg", "jpeg"]
 non_image_types = ["pdf", "txt", "csv", "toml", "py", "rst", "rtf",
                    "md",
@@ -925,7 +926,11 @@ if have_libreoffice or True:
     # or True so it tries to load, e.g. on MAC/Windows, even if don't have libreoffice since works without that
     non_image_types.extend(["docx", "doc", "xls", "xlsx"])
 
-file_types = non_image_types + image_types
+if have_whisper or True:
+    model = whisper.load_model("base")
+    non_image_types.extend(audio_types)
+
+file_types = non_image_types + image_types 
 
 
 def add_meta(docs1, file):
@@ -1149,6 +1154,17 @@ def file_to_doc(file, base_path=None, verbose=False, fail_any_exception=False,
             zip_ref.extractall(base_path)
             # recurse
             doc1 = path_to_docs(base_path, verbose=verbose, fail_any_exception=fail_any_exception, n_jobs=n_jobs)
+    elif (file.lower().endswith('.wav') or file.lower().endswith('.mp3')) and (have_whisper or True):
+        result = model.transcribe(file)
+        text = result["text"]
+        base_path = "user_audio"
+        source_file = os.path.join(base_path, file.lower() + ".txt")
+        makedirs(os.path.dirname(source_file), exist_ok=True)
+        with open(source_file, "wt") as f:
+            f.write(text)
+        metadata = dict(source=source_file, date=str(datetime.now()), input_type='audio transcription')
+        doc1 = Document(page_content=file, metadata=metadata)
+        doc1 = clean_doc(doc1)
     else:
         raise RuntimeError("No file handler for %s" % os.path.basename(file))
 
