@@ -47,6 +47,8 @@ Open-source data types are supported, .msg is not supported due to GPL-3 require
    - `.png` : PNG Image (optional),
    - `.jpg` : JPEG Image (optional),
    - `.jpeg` : JPEG Image (optional).
+   - `.mp3` : MP3 Audio (optional - based on Whisper)
+   - `.wav` : WAV Audio (optional - based on Whisper)
 
 To support image captioning, on Ubuntu run:
 ```bash
@@ -116,6 +118,8 @@ When pymupdf is installed, we will use `PyMuPDFLoader` by default to parse PDFs 
 The function `file_to_doc` controls the ingestion, with [allowed ones listed](https://github.com/h2oai/h2ogpt/blob/1184f057088743599e2d5241329551b8f7f5320d/src/gpt_langchain.py#L1021-L1035).   If one wants to add a new file type, add it to the list `file_types`, and then add an entry in `file_to_doc()` function.
 
 Metadata is added using `add_meta` function, and other metadata, like chunk_id, is added after chunking.  One could add a new step to add meta data to `page_content` to each langchain `Document`.
+
+#### I have used this to add support for mp3 and wav
 
 ## Database creation
 
