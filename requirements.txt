@@ -61,10 +61,10 @@ python-dotenv==1.0.0
 
 text-generation==0.6.0
 # for tokenization when don't have HF tokenizer
-tiktoken==0.4.0
+tiktoken==0.3.3
 # optional: for OpenAI endpoint or embeddings (requires key)
 openai==0.27.8
 
 git+https://github.com/openai/whisper.git 
 
-setuptools-rust=1.6.0
+setuptools-rust==1.6.0
