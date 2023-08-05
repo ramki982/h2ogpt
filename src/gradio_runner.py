@@ -371,15 +371,14 @@ def go_gradio(**kwargs):
                     url_text = gr.Textbox(label=url_label,
                                           # placeholder="Enter Submits",
                                           max_lines=1,
-                                          interactive=True)
-                    text_visible = kwargs['langchain_mode'] != 'Disabled' and allow_upload and enable_text_upload
+                                          visible=False)
                     user_text_text = gr.Textbox(label='Paste Text',
                                                 # placeholder="Enter Submits",
                                                 interactive=True,
-                                                visible=text_visible)
+                                                visible=False)
                     github_textbox = gr.Textbox(label="Github URL", visible=False)  # FIXME WIP
                 database_visible = kwargs['langchain_mode'] != 'Disabled'
-                with gr.Accordion("Resources", open=False, visible=database_visible):
+                with gr.Accordion("Resources", open=False, visible=False):
                     langchain_choices0 = get_langchain_choices(selection_docs_state0)
                     langchain_mode = gr.Radio(
                         langchain_choices0,
@@ -410,6 +409,7 @@ def go_gradio(**kwargs):
                         interactive=True,
                         visible=False)  # WIP
             col_tabs = gr.Column(elem_id="col_container", scale=10)
+
             with (col_tabs, gr.Tabs()):
                 with gr.TabItem("Chat"):
                     if kwargs['langchain_mode'] == 'Disabled':
@@ -458,13 +458,7 @@ def go_gradio(**kwargs):
                                     with gr.Column(min_width=mw1):
                                         submit = gr.Button(value='Submit', variant='primary', size='sm',
                                                            min_width=mw1)
-                                        stop_btn = gr.Button(value="Stop", variant='secondary', size='sm',
-                                                             min_width=mw1)
-                                        save_chat_btn = gr.Button("Save", size='sm', min_width=mw1)
-                                    with gr.Column(min_width=mw2):
-                                        retry_btn = gr.Button("Redo", size='sm', min_width=mw2)
-                                        undo = gr.Button("Undo", size='sm', min_width=mw2)
-                                        clear_chat_btn = gr.Button(value="Clear", size='sm', min_width=mw2)
+                            
                             text_output, text_output2, text_outputs = make_chatbots(output_label0, output_label0_model2,
                                                                                     **kwargs)
 
@@ -482,10 +476,10 @@ def go_gradio(**kwargs):
                                                   value=[DocumentChoice.ALL.value],
                                                   interactive=True,
                                                   multiselect=True,
-                                                  visible=kwargs['langchain_mode'] != 'Disabled',
+                                                  visible=False,
                                                   )
                     sources_visible = kwargs['langchain_mode'] != 'Disabled' and enable_sources_list
-                    with gr.Row():
+                    with gr.Row(visible=False):
                         with gr.Column(scale=1):
                             get_sources_btn = gr.Button(value="Update UI with Document(s) from DB", scale=0, size='sm',
                                                         visible=sources_visible)
@@ -496,7 +490,7 @@ def go_gradio(**kwargs):
                                                             visible=sources_visible and allow_upload_to_user_data)
                         with gr.Column(scale=4):
                             pass
-                    with gr.Row():
+                    with gr.Row(visible=False):
                         with gr.Column(scale=1):
                             visible_add_remove_collection = (allow_upload_to_user_data or
                                                              allow_upload_to_my_data) and \
@@ -515,17 +509,15 @@ def go_gradio(**kwargs):
                             load_langchain = gr.Button(value="Load LangChain State", scale=0, size='sm',
                                                        visible=allow_upload_to_user_data and
                                                                kwargs['langchain_mode'] != 'Disabled')
-                        with gr.Column(scale=1):
+                        with gr.Column(scale=1, visible=False):
                             df0 = get_df_langchain_mode_paths(selection_docs_state0)
                             langchain_mode_path_text = gr.Dataframe(value=df0,
                                                                     visible=visible_add_remove_collection,
                                                                     label='LangChain Mode-Path',
                                                                     show_label=False,
                                                                     interactive=False)
-                        with gr.Column(scale=4):
-                            pass
 
-                    sources_row = gr.Row(visible=kwargs['langchain_mode'] != 'Disabled' and enable_sources_list,
+                    sources_row = gr.Row(visible=False,
                                          equal_height=False)
                     with sources_row:
                         with gr.Column(scale=1):
@@ -536,55 +528,10 @@ def go_gradio(**kwargs):
 
                     doc_exception_text = gr.Textbox(value="", label='Document Exceptions',
                                                     interactive=False,
-                                                    visible=kwargs['langchain_mode'] != 'Disabled')
-                with gr.TabItem("Document Viewer"):
-                    with gr.Row(visible=kwargs['langchain_mode'] != 'Disabled'):
-                        with gr.Column(scale=2):
-                            get_viewable_sources_btn = gr.Button(value="Update UI with Document(s) from DB", scale=0,
-                                                                 size='sm',
-                                                                 visible=sources_visible)
-                            view_document_choice = gr.Dropdown(viewable_docs_state0,
-                                                               label="Select Single Document",
-                                                               value=None,
-                                                               interactive=True,
-                                                               multiselect=False,
-                                                               visible=True,
-                                                               )
-                        with gr.Column(scale=4):
-                            pass
-                    document = 'http://infolab.stanford.edu/pub/papers/google.pdf'
-                    doc_view = gr.HTML(visible=False)
-                    doc_view2 = gr.Dataframe(visible=False)
-                    doc_view3 = gr.JSON(visible=False)
-                    doc_view4 = gr.Markdown(visible=False)
+                                                    visible=False)
 
-                with gr.TabItem("Chat History"):
-                    with gr.Row():
-                        with gr.Column(scale=1):
-                            remove_chat_btn = gr.Button(value="Remove Selected Saved Chats", visible=True, size='sm')
-                            flag_btn = gr.Button("Flag Current Chat", size='sm')
-                            export_chats_btn = gr.Button(value="Export Chats to Download", size='sm')
-                        with gr.Column(scale=4):
-                            pass
-                    with gr.Row():
-                        chats_file = gr.File(interactive=False, label="Download Exported Chats")
-                        chatsup_output = gr.File(label="Upload Chat File(s)",
-                                                 file_types=['.json'],
-                                                 file_count='multiple',
-                                                 elem_id="warning", elem_classes="feedback")
-                    with gr.Row():
-                        if 'mbart-' in kwargs['model_lower']:
-                            src_lang = gr.Dropdown(list(languages_covered().keys()),
-                                                   value=kwargs['src_lang'],
-                                                   label="Input Language")
-                            tgt_lang = gr.Dropdown(list(languages_covered().keys()),
-                                                   value=kwargs['tgt_lang'],
-                                                   label="Output Language")
-
-                    chat_exception_text = gr.Textbox(value="", visible=True, label='Chat Exceptions',
-                                                     interactive=False)
                 with gr.TabItem("Expert"):
-                    with gr.Row():
+                    with gr.Row(visible=False):
                         with gr.Column():
                             stream_output = gr.components.Checkbox(label="Stream output",
                                                                    value=kwargs['stream_output'])
@@ -700,10 +647,7 @@ def go_gradio(**kwargs):
                     load_msg2 = "Load-Unload Model/LORA 2 [unload works if did not use --base_model]" if not is_public \
                         else "LOAD-UNLOAD DISABLED FOR HOSTED DEMO 2"
                     variant_load_msg = 'primary' if not is_public else 'secondary'
-                    compare_checkbox = gr.components.Checkbox(label="Compare Mode",
-                                                              value=kwargs['model_lock'],
-                                                              visible=not is_public and not kwargs['model_lock'])
-                    with gr.Row():
+                    with gr.Row(visible=False):
                         n_gpus_list = [str(x) for x in list(range(-1, n_gpus))]
                         with gr.Column():
                             with gr.Row():
@@ -737,126 +681,10 @@ def go_gradio(**kwargs):
                                     prompt_dict = gr.Textbox(label="Prompt (or Custom)",
                                                              value=pprint.pformat(kwargs['prompt_dict'], indent=4),
                                                              interactive=not is_public, lines=4)
-                        col_model2 = gr.Column(visible=False)
-                        with col_model2:
-                            with gr.Row():
-                                with gr.Column(scale=20, visible=not kwargs['model_lock']):
-                                    model_choice2 = gr.Dropdown(model_options_state.value[0], label="Choose Model 2",
-                                                                value=no_model_str)
-                                    lora_choice2 = gr.Dropdown(lora_options_state.value[0], label="Choose LORA 2",
-                                                               value=no_lora_str,
-                                                               visible=kwargs['show_lora'])
-                                    server_choice2 = gr.Dropdown(server_options_state.value[0], label="Choose Server 2",
-                                                                 value=no_server_str,
-                                                                 visible=not is_public)
-                                with gr.Column(scale=1, visible=not kwargs['model_lock']):
-                                    load_model_button2 = gr.Button(load_msg2, variant=variant_load_msg, scale=0,
-                                                                   size='sm', interactive=not is_public)
-                                    model_load8bit_checkbox2 = gr.components.Checkbox(
-                                        label="Load 8-bit 2 [requires support]",
-                                        value=kwargs['load_8bit'], interactive=not is_public)
-                                    model_use_gpu_id_checkbox2 = gr.components.Checkbox(
-                                        label="Choose Devices 2 [If not Checked, use all GPUs]",
-                                        value=kwargs[
-                                            'use_gpu_id'], interactive=not is_public)
-                                    model_gpu2 = gr.Dropdown(n_gpus_list,
-                                                             label="GPU ID 2 [-1 = all GPUs, if choose is enabled]",
-                                                             value=kwargs['gpu_id'], interactive=not is_public)
-                                    # no model/lora loaded ever in model2 by default
-                                    model_used2 = gr.Textbox(label="Current Model 2", value=no_model_str,
-                                                             interactive=False)
-                                    lora_used2 = gr.Textbox(label="Current LORA 2", value=no_lora_str,
-                                                            visible=kwargs['show_lora'], interactive=False)
-                                    server_used2 = gr.Textbox(label="Current Server 2", value=no_server_str,
-                                                              interactive=False,
-                                                              visible=not is_public)
-                                    prompt_dict2 = gr.Textbox(label="Prompt (or Custom) 2",
-                                                              value=pprint.pformat(kwargs['prompt_dict'], indent=4),
-                                                              interactive=not is_public, lines=4)
-                    with gr.Row(visible=not kwargs['model_lock']):
-                        with gr.Column(scale=50):
-                            new_model = gr.Textbox(label="New Model name/path", interactive=not is_public)
-                        with gr.Column(scale=50):
-                            new_lora = gr.Textbox(label="New LORA name/path", visible=kwargs['show_lora'],
-                                                  interactive=not is_public)
-                        with gr.Column(scale=50):
-                            new_server = gr.Textbox(label="New Server url:port", interactive=not is_public)
-                        with gr.Row():
-                            add_model_lora_server_button = gr.Button("Add new Model, Lora, Server url:port", scale=0,
-                                                                     size='sm', interactive=not is_public)
-                with gr.TabItem("System"):
-                    with gr.Row():
-                        with gr.Column(scale=1):
-                            side_bar_text = gr.Textbox('on', visible=False, interactive=False)
-                            submit_buttons_text = gr.Textbox('on', visible=False, interactive=False)
 
-                            side_bar_btn = gr.Button("Toggle SideBar", variant="secondary", size="sm")
-                            submit_buttons_btn = gr.Button("Toggle Submit Buttons", variant="secondary", size="sm")
-                            col_tabs_scale = gr.Slider(minimum=1, maximum=20, value=10, step=1, label='Window Size')
-                            text_outputs_height = gr.Slider(minimum=100, maximum=2000, value=kwargs['height'] or 400,
-                                                            step=50, label='Chat Height')
-                            dark_mode_btn = gr.Button("Dark Mode", variant="secondary", size="sm")
-                        with gr.Column(scale=4):
-                            pass
-                    system_visible0 = not is_public and not admin_pass
-                    admin_row = gr.Row()
-                    with admin_row:
-                        with gr.Column(scale=1):
-                            admin_pass_textbox = gr.Textbox(label="Admin Password", type='password',
-                                                            visible=not system_visible0)
-                        with gr.Column(scale=4):
-                            pass
-                    system_row = gr.Row(visible=system_visible0)
-                    with system_row:
-                        with gr.Column():
-                            with gr.Row():
-                                system_btn = gr.Button(value='Get System Info', size='sm')
-                                system_text = gr.Textbox(label='System Info', interactive=False, show_copy_button=True)
-                            with gr.Row():
-                                system_input = gr.Textbox(label='System Info Dict Password', interactive=True,
-                                                          visible=not is_public)
-                                system_btn2 = gr.Button(value='Get System Info Dict', visible=not is_public, size='sm')
-                                system_text2 = gr.Textbox(label='System Info Dict', interactive=False,
-                                                          visible=not is_public, show_copy_button=True)
-                            with gr.Row():
-                                system_btn3 = gr.Button(value='Get Hash', visible=not is_public, size='sm')
-                                system_text3 = gr.Textbox(label='Hash', interactive=False,
-                                                          visible=not is_public, show_copy_button=True)
 
-                            with gr.Row():
-                                zip_btn = gr.Button("Zip", size='sm')
-                                zip_text = gr.Textbox(label="Zip file name", interactive=False)
-                                file_output = gr.File(interactive=False, label="Zip file to Download")
-                            with gr.Row():
-                                s3up_btn = gr.Button("S3UP", size='sm')
-                                s3up_text = gr.Textbox(label='S3UP result', interactive=False)
-
-                with gr.TabItem("Terms of Service"):
-                    description = ""
-                    description += """<p><b> DISCLAIMERS: </b><ul><i><li>The model was trained on The Pile and other data, which may contain objectionable content.  Use at own risk.</i></li>"""
-                    if kwargs['load_8bit']:
-                        description += """<i><li> Model is loaded in 8-bit and has other restrictions on this host. UX can be worse than non-hosted version.</i></li>"""
-                    description += """<i><li>Conversations may be used to improve h2oGPT.  Do not share sensitive information.</i></li>"""
-                    if 'h2ogpt-research' in kwargs['base_model']:
-                        description += """<i><li>Research demonstration only, not used for commercial purposes.</i></li>"""
-                    description += """<i><li>By using h2oGPT, you accept our <a href="https://github.com/h2oai/h2ogpt/blob/main/docs/tos.md">Terms of Service</a></i></li></ul></p>"""
-                    gr.Markdown(value=description, show_label=False, interactive=False)
-
-                with gr.TabItem("Hosts"):
-                    gr.Markdown(f"""
-                        {description_bottom}
-                        {task_info_md}
-                        """)
-
-        # Get flagged data
-        zip_data1 = functools.partial(zip_data, root_dirs=['flagged_data_points', kwargs['save_dir']])
-        zip_event = zip_btn.click(zip_data1, inputs=None, outputs=[file_output, zip_text], queue=False,
-                                  api_name='zip_data' if allow_api else None)
-        s3up_event = s3up_btn.click(s3up, inputs=zip_text, outputs=s3up_text, queue=False,
-                                    api_name='s3up_data' if allow_api else None)
-
-        def clear_file_list():
-            return None
+        chat_exception_text = gr.Textbox(value="", visible=False, label='Chat Exceptions',
+                                                     interactive=False)
 
         def make_non_interactive(*args):
             if len(args) == 1:
@@ -963,7 +791,6 @@ def go_gradio(**kwargs):
         def resize_col_tabs(x):
             return gr.Dropdown.update(scale=x)
 
-        col_tabs_scale.change(fn=resize_col_tabs, inputs=col_tabs_scale, outputs=col_tabs, queue=False)
 
         def resize_chatbots(x, num_model_lock=0):
             if num_model_lock == 0:
@@ -973,8 +800,6 @@ def go_gradio(**kwargs):
             return tuple([gr.update(height=x)] * num_model_lock)
 
         resize_chatbots_func = functools.partial(resize_chatbots, num_model_lock=len(text_outputs))
-        text_outputs_height.change(fn=resize_chatbots_func, inputs=text_outputs_height,
-                                   outputs=[text_output, text_output2] + text_outputs, queue=False)
 
         def update_dropdown(x):
             return gr.Dropdown.update(choices=x, value=[docs_state0[0]])
@@ -1000,88 +825,9 @@ def go_gradio(**kwargs):
                                          outputs=[file_source, viewable_docs_state],
                                          queue=queue,
                                          api_name='get_viewable_sources' if allow_api else None)
-        eventdb12 = get_viewable_sources_btn.click(**get_viewable_sources_args) \
-            .then(fn=update_viewable_dropdown, inputs=viewable_docs_state,
-                  outputs=view_document_choice)
 
-        def show_doc(file):
-            dummy1 = gr.update(visible=False, value=None)
-            dummy_ret = dummy1, dummy1, dummy1, dummy1
-            if not isinstance(file, str):
-                return dummy_ret
 
-            if file.endswith('.md'):
-                try:
-                    with open(file, 'rt') as f:
-                        content = f.read()
-                    return dummy1, dummy1, dummy1, gr.update(visible=True, value=content)
-                except:
-                    return dummy_ret
-
-            if file.endswith('.py'):
-                try:
-                    with open(file, 'rt') as f:
-                        content = f.read()
-                    content = f"```python\n{content}\n```"
-                    return dummy1, dummy1, dummy1, gr.update(visible=True, value=content)
-                except:
-                    return dummy_ret
-
-            if file.endswith('.txt') or file.endswith('.rst') or file.endswith('.rtf') or file.endswith('.toml'):
-                try:
-                    with open(file, 'rt') as f:
-                        content = f.read()
-                    content = f"```text\n{content}\n```"
-                    return dummy1, dummy1, dummy1, gr.update(visible=True, value=content)
-                except:
-                    return dummy_ret
-
-            func = None
-            if file.endswith(".csv"):
-                func = pd.read_csv
-            elif file.endswith(".pickle"):
-                func = pd.read_pickle
-            elif file.endswith(".xls") or file.endswith("xlsx"):
-                func = pd.read_excel
-            elif file.endswith('.json'):
-                func = pd.read_json
-            elif file.endswith('.xml'):
-                func = pd.read_xml
-            if func is not None:
-                try:
-                    df = func(file).head(100)
-                except:
-                    return dummy_ret
-                return dummy1, gr.update(visible=True, value=df), dummy1, dummy1
-            port = int(os.getenv('GRADIO_SERVER_PORT', '7860'))
-            import pathlib
-            absolute_path_string = os.path.abspath(file)
-            url_path = pathlib.Path(absolute_path_string).as_uri()
-            url = get_url(absolute_path_string, from_str=True)
-            img_url = url.replace("""<a href=""", """<img src=""")
-            if file.endswith('.png') or file.endswith('.jpg') or file.endswith('.jpeg'):
-                return gr.update(visible=True, value=img_url), dummy1, dummy1, dummy1
-            elif file.endswith('.pdf') or 'arxiv.org/pdf' in file:
-                if file.startswith('http') or file.startswith('https'):
-                    # if file is online, then might as well use google(?)
-                    document1 = file
-                    return gr.update(visible=True,
-                                     value=f"""<iframe width="1000" height="800" src="https://docs.google.com/viewerng/viewer?url={document1}&embedded=true" frameborder="0" height="100%" width="100%">
-</iframe>
-"""), dummy1, dummy1, dummy1
-                else:
-                    ip = get_local_ip()
-                    document1 = url_path.replace('file://', f'http://{ip}:{port}/')
-                    # document1 = url
-                    return gr.update(visible=True, value=f"""<object data="{document1}" type="application/pdf">
-    <iframe src="https://docs.google.com/viewer?url={document1}&embedded=true"></iframe>
-</object>"""), dummy1, dummy1, dummy1
-            else:
-                return dummy_ret
-
-        view_document_choice.select(fn=show_doc, inputs=view_document_choice,
-                                    outputs=[doc_view, doc_view2, doc_view3, doc_view4])
-
+ 
         # Get inputs to evaluate() and make_db()
         # don't deepcopy, can contain model itself
         all_kwargs = kwargs.copy()
@@ -1102,9 +848,6 @@ def go_gradio(**kwargs):
 
         def close_admin(x):
             return gr.update(visible=not (x == admin_pass))
-
-        admin_pass_textbox.submit(check_admin_pass, inputs=admin_pass_textbox, outputs=system_row, queue=False) \
-            .then(close_admin, inputs=admin_pass_textbox, outputs=admin_row, queue=False)
 
         def add_langchain_mode(db1s, selection_docs_state1, langchain_mode1, y):
             for k in db1s:
@@ -1317,28 +1060,9 @@ def go_gradio(**kwargs):
                                     **kwargs_evaluate
                                     )
 
-        dark_mode_btn.click(
-            None,
-            None,
-            None,
-            _js=get_dark_js(),
-            api_name="dark" if allow_api else None,
-            queue=False,
-        )
-
         def visible_toggle(x):
             x = 'off' if x == 'on' else 'on'
             return x, gr.Column.update(visible=True if x == 'on' else False)
-
-        side_bar_btn.click(fn=visible_toggle,
-                           inputs=side_bar_text,
-                           outputs=[side_bar_text, side_bar],
-                           queue=False)
-
-        submit_buttons_btn.click(fn=visible_toggle,
-                                 inputs=submit_buttons_text,
-                                 outputs=[submit_buttons_text, submit_buttons],
-                                 queue=False)
 
         # examples after submit or any other buttons for chat or no chat
         if kwargs['examples'] is not None and kwargs['show_examples']:
@@ -1828,37 +1552,11 @@ def go_gradio(**kwargs):
             submits1 = submits2 = submits3 = []
             submits4 = []
 
-            fun_source = [instruction.submit, submit.click, retry_btn.click]
             fun_name = ['instruction', 'submit', 'retry']
             user_args = [all_user_args, all_user_args, all_retry_user_args]
             bot_args = [all_bot_args, all_bot_args, all_retry_bot_args]
-            for userargs1, botarg1, funn1, funs1 in zip(user_args, bot_args, fun_name, fun_source):
-                submit_event11 = funs1(fn=dummy_fun,
-                                       inputs=instruction, outputs=instruction, queue=queue)
-                submit_event1a = submit_event11.then(**userargs1, queue=queue,
-                                                     api_name='%s' % funn1 if allow_api else None)
-                # if hit enter on new instruction for submitting new query, no longer the saved chat
-                submit_event1b = submit_event1a.then(clear_all, inputs=None,
-                                                     outputs=[instruction, iinput, radio_chats, score_text,
-                                                              score_text2],
-                                                     queue=queue)
-                submit_event1c = submit_event1b.then(**botarg1,
-                                                     api_name='%s_bot' % funn1 if allow_api else None,
-                                                     queue=queue)
-                submit_event1d = submit_event1c.then(**all_score_args,
-                                                     api_name='%s_bot_score' % funn1 if allow_api else None,
-                                                     queue=queue)
 
-                submits1.extend([submit_event1a, submit_event1b, submit_event1c, submit_event1d])
 
-            # if undo, no longer the saved chat
-            submit_event4 = undo.click(fn=dummy_fun,
-                                       inputs=instruction, outputs=instruction, queue=queue) \
-                .then(**all_undo_user_args, api_name='undo' if allow_api else None) \
-                .then(clear_all, inputs=None, outputs=[instruction, iinput, radio_chats, score_text,
-                                                       score_text2], queue=queue) \
-                .then(**all_score_args, api_name='undo_score' if allow_api else None)
-            submits4 = [submit_event4]
 
         else:
             # in case 2nd model, consume instruction first, so can clear quickly
@@ -1909,39 +1607,6 @@ def go_gradio(**kwargs):
                         submit_event2e,
                         submit_event2f, submit_event2g]
 
-            submit_event31 = retry_btn.click(fn=dummy_fun,
-                                             inputs=instruction, outputs=instruction, queue=queue)
-            submit_event3a = submit_event31.then(**user_args, api_name='retry' if allow_api else None)
-            # if retry, no longer the saved chat
-            submit_event3a2 = submit_event3a.then(deselect_radio_chats, inputs=None, outputs=radio_chats, queue=queue)
-            submit_event3b = submit_event3a2.then(**user_args2, api_name='retry2' if allow_api else None)
-            submit_event3c = submit_event3b.then(clear_instruct, None, instruction) \
-                .then(clear_instruct, None, iinput)
-            submit_event3d = submit_event3c.then(**retry_bot_args, api_name='retry_bot' if allow_api else None,
-                                                 queue=queue)
-            submit_event3e = submit_event3d.then(**score_args,
-                                                 api_name='retry_bot_score' if allow_api else None,
-                                                 queue=queue)
-            submit_event3f = submit_event3e.then(**retry_bot_args2, api_name='retry_bot2' if allow_api else None,
-                                                 queue=queue)
-            submit_event3g = submit_event3f.then(**score_args2,
-                                                 api_name='retry_bot_score2' if allow_api else None,
-                                                 queue=queue)
-
-            submits3 = [submit_event3a, submit_event3a2, submit_event3b, submit_event3c, submit_event3d,
-                        submit_event3e,
-                        submit_event3f, submit_event3g]
-
-            # if undo, no longer the saved chat
-            submit_event4 = undo.click(fn=dummy_fun,
-                                       inputs=instruction, outputs=instruction, queue=queue) \
-                .then(**undo_user_args, api_name='undo' if allow_api else None) \
-                .then(**undo_user_args2, api_name='undo2' if allow_api else None) \
-                .then(clear_all, inputs=None, outputs=[instruction, iinput, radio_chats, score_text,
-                                                       score_text2], queue=queue) \
-                .then(**score_args, api_name='undo_score' if allow_api else None) \
-                .then(**score_args2, api_name='undo_score2' if allow_api else None)
-            submits4 = [submit_event4]
 
         # MANAGE CHATS
         def dedup(short_chat, short_chats):
@@ -2064,9 +1729,7 @@ def go_gradio(**kwargs):
                 chat_state1.pop(chat_key, None)
             return gr.update(choices=list(chat_state1.keys()), value=None), chat_state1
 
-        remove_chat_event = remove_chat_btn.click(remove_chat,
-                                                  inputs=[radio_chats, chat_state], outputs=[radio_chats, chat_state],
-                                                  queue=False, api_name='remove_chat')
+
 
         def get_chats1(chat_state1):
             base = 'chats'
@@ -2076,8 +1739,7 @@ def go_gradio(**kwargs):
                 f.write(json.dumps(chat_state1, indent=2))
             return filename
 
-        export_chat_event = export_chats_btn.click(get_chats1, inputs=chat_state, outputs=chats_file, queue=False,
-                                                   api_name='export_chats' if allow_api else None)
+
 
         def add_chats_from_file(file, chat_state1, radio_chats1, chat_exception_text1):
             if not file:
@@ -2108,27 +1770,6 @@ def go_gradio(**kwargs):
             return None, chat_state1, gr.update(choices=list(chat_state1.keys()), value=None), chat_exception_text1
 
         # note for update_user_db_func output is ignored for db
-        chatup_change_event = chatsup_output.change(add_chats_from_file,
-                                                    inputs=[chatsup_output, chat_state, radio_chats,
-                                                            chat_exception_text],
-                                                    outputs=[chatsup_output, chat_state, radio_chats,
-                                                             chat_exception_text],
-                                                    queue=False,
-                                                    api_name='add_to_chats' if allow_api else None)
-
-        clear_chat_event = clear_chat_btn.click(fn=clear_texts,
-                                                inputs=[text_output, text_output2] + text_outputs,
-                                                outputs=[text_output, text_output2] + text_outputs,
-                                                queue=False, api_name='clear' if allow_api else None) \
-            .then(deselect_radio_chats, inputs=None, outputs=radio_chats, queue=False) \
-            .then(clear_scores, outputs=[score_text, score_text2, score_text_nochat])
-
-        clear_event = save_chat_btn.click(save_chat,
-                                          inputs=[text_output, text_output2] + text_outputs + [chat_state],
-                                          outputs=[chat_state, radio_chats],
-                                          api_name='save_chat' if allow_api else None)
-        if kwargs['score_model']:
-            clear_event2 = clear_event.then(clear_scores, outputs=[score_text, score_text2, score_text_nochat])
 
         # NOTE: clear of instruction/iinput for nochat has to come after score,
         # because score for nochat consumes actual textbox, while chat consumes chat history filled by user()
@@ -2258,8 +1899,7 @@ def go_gradio(**kwargs):
         get_prompt_str_func1 = functools.partial(get_prompt_str, which=1)
         get_prompt_str_func2 = functools.partial(get_prompt_str, which=2)
         prompt_type.change(fn=get_prompt_str_func1, inputs=[prompt_type, prompt_dict], outputs=prompt_dict, queue=False)
-        prompt_type2.change(fn=get_prompt_str_func2, inputs=[prompt_type2, prompt_dict2], outputs=prompt_dict2,
-                            queue=False)
+
 
         def dropdown_prompt_type_list(x):
             return gr.Dropdown.update(value=x)
@@ -2284,20 +1924,10 @@ def go_gradio(**kwargs):
             .then(**nochat_update_args) \
             .then(clear_torch_cache)
 
-        load_model_args2 = dict(fn=load_model,
-                                inputs=[model_choice2, lora_choice2, server_choice2, model_state2, prompt_type2,
-                                        model_load8bit_checkbox2, model_use_gpu_id_checkbox2, model_gpu2],
-                                outputs=[model_state2, model_used2, lora_used2, server_used2,
-                                         # if prompt_type2 changes, prompt_dict2 will change via change rule
-                                         prompt_type2, max_new_tokens2, min_new_tokens2
-                                         ])
+
         prompt_update_args2 = dict(fn=dropdown_prompt_type_list, inputs=prompt_type2, outputs=prompt_type2)
-        chatbot_update_args2 = dict(fn=chatbot_list, inputs=[text_output2, model_used2], outputs=text_output2)
-        load_model_event2 = load_model_button2.click(**load_model_args2,
-                                                     api_name='load_model2' if allow_api and is_public else None) \
-            .then(**prompt_update_args2) \
-            .then(**chatbot_update_args2) \
-            .then(clear_torch_cache)
+
+
 
         def dropdown_model_lora_server_list(model_list0, model_x,
                                             lora_list0, lora_x,
@@ -2333,95 +1963,20 @@ def go_gradio(**kwargs):
 
             return tuple(ret1 + ret2 + ret3)
 
-        add_model_lora_server_event = \
-            add_model_lora_server_button.click(fn=dropdown_model_lora_server_list,
-                                               inputs=[model_options_state, new_model] +
-                                                      [lora_options_state, new_lora] +
-                                                      [server_options_state, new_server] +
-                                                      [model_used, lora_used, server_used] +
-                                                      [model_used2, lora_used2, server_used2],
-                                               outputs=[model_choice, model_choice2, new_model, model_options_state] +
-                                                       [lora_choice, lora_choice2, new_lora, lora_options_state] +
-                                                       [server_choice, server_choice2, new_server,
-                                                        server_options_state],
-                                               queue=False)
 
-        go_event = go_btn.click(lambda: gr.update(visible=False), None, go_btn, api_name="go" if allow_api else None,
-                                queue=False) \
-            .then(lambda: gr.update(visible=True), None, normal_block, queue=False) \
-            .then(**load_model_args, queue=False).then(**prompt_update_args, queue=False)
-
-        def compare_textbox_fun(x):
-            return gr.Textbox.update(visible=x)
-
-        def compare_column_fun(x):
-            return gr.Column.update(visible=x)
-
-        def compare_prompt_fun(x):
-            return gr.Dropdown.update(visible=x)
-
-        def slider_fun(x):
-            return gr.Slider.update(visible=x)
-
-        compare_checkbox.select(compare_textbox_fun, compare_checkbox, text_output2,
-                                api_name="compare_checkbox" if allow_api else None) \
-            .then(compare_column_fun, compare_checkbox, col_model2) \
-            .then(compare_prompt_fun, compare_checkbox, prompt_type2) \
-            .then(compare_textbox_fun, compare_checkbox, score_text2) \
-            .then(slider_fun, compare_checkbox, max_new_tokens2) \
-            .then(slider_fun, compare_checkbox, min_new_tokens2)
         # FIXME: add score_res2 in condition, but do better
 
         # callback for logging flagged input/output
         callback.setup(inputs_list + [text_output, text_output2] + text_outputs, "flagged_data_points")
-        flag_btn.click(lambda *args: callback.flag(args), inputs_list + [text_output, text_output2] + text_outputs,
-                       None,
-                       preprocess=False,
-                       api_name='flag' if allow_api else None, queue=False)
+
         flag_btn_nochat.click(lambda *args: callback.flag(args), inputs_list + [text_output_nochat], None,
                               preprocess=False,
                               api_name='flag_nochat' if allow_api else None, queue=False)
 
-        def get_system_info():
-            if is_public:
-                time.sleep(10)  # delay to avoid spam since queue=False
-            return gr.Textbox.update(value=system_info_print())
 
-        system_event = system_btn.click(get_system_info, outputs=system_text,
-                                        api_name='system_info' if allow_api else None, queue=False)
-
-        def get_system_info_dict(system_input1, **kwargs1):
-            if system_input1 != os.getenv("ADMIN_PASS", ""):
-                return json.dumps({})
-            exclude_list = ['admin_pass', 'examples']
-            sys_dict = {k: v for k, v in kwargs1.items() if
-                        isinstance(v, (str, int, bool, float)) and k not in exclude_list}
-            try:
-                sys_dict.update(system_info())
-            except Exception as e:
-                # protection
-                print("Exception: %s" % str(e), flush=True)
-            return json.dumps(sys_dict)
 
         system_kwargs = all_kwargs.copy()
         system_kwargs.update(dict(command=str(' '.join(sys.argv))))
-        get_system_info_dict_func = functools.partial(get_system_info_dict, **all_kwargs)
-
-        system_dict_event = system_btn2.click(get_system_info_dict_func,
-                                              inputs=system_input,
-                                              outputs=system_text2,
-                                              api_name='system_info_dict' if allow_api else None,
-                                              queue=False,  # queue to avoid spam
-                                              )
-
-        def get_hash():
-            return kwargs['git_hash']
-
-        system_event = system_btn3.click(get_hash,
-                                         outputs=system_text3,
-                                         api_name='system_hash' if allow_api else None,
-                                         queue=False,
-                                         )
 
         def count_chat_tokens(model_state1, chat1, prompt_type1, prompt_dict1,
                               memory_restriction_level1=0,
@@ -2462,18 +2017,7 @@ def go_gradio(**kwargs):
 
         # don't pass text_output, don't want to clear output, just stop it
         # cancel only stops outer generation, not inner generation or non-generation
-        stop_btn.click(lambda: None, None, None,
-                       cancels=submits1 + submits2 + submits3 + submits4 +
-                               [submit_event_nochat, submit_event_nochat2] +
-                               [eventdb1, eventdb2, eventdb3] +
-                               [eventdb7, eventdb8, eventdb9, eventdb12] +
-                               db_events +
-                               [clear_event] +
-                               [submit_event_nochat_api, submit_event_nochat] +
-                               [load_model_event, load_model_event2] +
-                               [count_tokens_event]
-                       ,
-                       queue=False, api_name='stop' if allow_api else None).then(clear_torch_cache, queue=False)
+
 
         demo.load(None, None, None, _js=get_dark_js() if kwargs['dark'] else None)
 
