@@ -186,9 +186,9 @@ class SoftTheme(Soft):
 def get_h2o_title(title):
     # NOTE: Check full width desktop, smallest width browser desktop, iPhone browsers to ensure no overlap etc.
     return f"""
-                <div style="background-color: #004165; color: #ffffff;display: flex; align-items: center; padding: 10px;">
-                    <img src="https://www.anz.com.au/content/dam/anzconz/images/common/promopages/logo-promo-anz-small.png" style= "width: 100px; height: auto; margin-right: 20px;">
-                    <h1 style="font-size: 24px; margin: 0; color:#fff">{title}</h1>
+                <div style="display:flex; justify-content:center; margin-bottom:30px; background-color: #004165;color: #ffffff; padding: 10px;">
+                    <div style="width: 12%;"><img src="https://www.anz.com.au/content/dam/anzconz/images/common/promopages/logo-promo-anz-small.png"></div>
+                    <h1 style="line-height:90px">{title}</h1>
                 </div>
                 """
 
@@ -197,23 +197,11 @@ def get_simple_title(title):
     return f"""<h1 align="center"> {title}</h1>"""
 
 
-def get_dark_js() -> str:
-    return """
+def get_dark_js():
+    return """() => {
         if (document.querySelectorAll('.dark').length) {
             document.querySelectorAll('.dark').forEach(el => el.classList.remove('dark'));
         } else {
             document.querySelector('body').classList.add('dark');
         }
-    """
-
-def get_heap_js(heapAppId: str) -> str:
-    return ("""globalThis.window.heap=window.heap||[],heap.load=function(e,t){window.heap.appid=e,window.heap.config=t=t||{};var r=document.createElement("script");r.type="text/javascript",r.async=!0,r.src="https://cdn.heapanalytics.com/js/heap-"+e+".js";var a=document.getElementsByTagName("script")[0];a.parentNode.insertBefore(r,a);for(var n=function(e){return function(){heap.push([e].concat(Array.prototype.slice.call(arguments,0)))}},p=["addEventProperties","addUserProperties","clearEventProperties","identify","resetIdentity","removeEventProperty","setEventProperties","track","unsetEventProperty"],o=0;o<p.length;o++)heap[p[o]]=n(p[o])};"""
-           f"""heap.load("{heapAppId}");""")
-
-def wrap_js_to_lambda(*args: str) -> str:
-    newline = "\n"
-    return f"""
-        () => {{
-            {newline.join([a for a in args if a is not None])}
-        }}
-    """
+    }"""
