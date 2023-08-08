@@ -13,7 +13,10 @@ def get_css(kwargs) -> str:
 
 def make_css_base() -> str:
     css1 = """
-        #col_container {margin-left: auto; margin-right: auto; text-align: left;}
+        #col_container {margin-left: auto; margin-right: auto; text-align: left; }
+        #col_container #prompt-form span,  #col_container button.primary,  #col_container [data-testid="block-label"]{ color:#fff }
+        #col_container .tab-nav button{display:none}
+
         """
     return css1 + """
     @import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600&display=swap');
