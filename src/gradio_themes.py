@@ -183,19 +183,30 @@ class SoftTheme(Soft):
         )
 
 
+# def get_h2o_title(title):
+#     # NOTE: Check full width desktop, smallest width browser desktop, iPhone browsers to ensure no overlap etc.
+#     return f"""
+#                 <div style="display:flex; justify-content:center; margin-bottom:30px; background-color: #004165;color: #ffffff; padding: 10px;">
+#                     <div style="width: 12%;"><img src="https://www.anz.com.au/content/dam/anzconz/images/common/promopages/logo-promo-anz-small.png"></div>
+#                     <h1 style="line-height:90px">{title}</h1>
+#                 </div>
+#                 """
+
+
+# def get_simple_title(title):
+#     return f"""<h1 align="center"> {title}</h1>"""
+
 def get_h2o_title(title):
     # NOTE: Check full width desktop, smallest width browser desktop, iPhone browsers to ensure no overlap etc.
     return f"""
-                <div style="display:flex; justify-content:center; margin-bottom:30px; background-color: #004165;color: #ffffff; padding: 10px;">
-                    <div style="width: 12%;"><img src="https://www.anz.com.au/content/dam/anzconz/images/common/promopages/logo-promo-anz-small.png"></div>
-                    <h1 style="line-height:90px">{title}</h1>
+                <div style="background-color: #004165; color: #ffffff;display: flex; align-items: center; padding: 10px;">
+                    <img src="https://www.anz.com.au/content/dam/anzconz/images/common/promopages/logo-promo-anz-small.png" style= "width: 100px; height: auto; margin-right: 20px;">
+                    <h1 style="font-size: 24px; margin: 0; color:#fff">{title}</h1>
                 </div>
                 """
 
-
 def get_simple_title(title):
     return f"""<h1 align="center"> {title}</h1>"""
-
 
 def get_dark_js():
     return """() => {

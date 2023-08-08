@@ -144,7 +144,7 @@ def go_gradio(**kwargs):
         instruction_label_nochat = "Instruction (Shift-Enter or push Submit to send message," \
                                    " use Enter for multiple input lines)"
 
-    title = 'Gyanz.AI'
+    title = 'GYANZ.AI'
     description_bottom = ""
     if is_hf:
         description_bottom += '''<a href="https://huggingface.co/spaces/h2oai/h2ogpt-chatbot?duplicate=true"><img src="https://bit.ly/3gLdBN6" style="white-space: nowrap" alt="Duplicate Space"></a>'''
@@ -175,7 +175,7 @@ def go_gradio(**kwargs):
                                  radius_size=gr.themes.sizes.spacing_md))
 
     theme = H2oTheme(**theme_kwargs) if kwargs['h2ocolors'] else SoftTheme(**theme_kwargs)
-    demo = gr.Blocks(theme=theme, css=css_code, title="h2oGPT", analytics_enabled=False)
+    demo = gr.Blocks(theme=theme, css=css_code, title="GYANZ.AI", analytics_enabled=False)
     callback = gr.CSVLogger()
 
     model_options0 = flatten_list(list(prompt_type_to_model_name.values())) + kwargs['extra_model_options']
@@ -2022,7 +2022,7 @@ def go_gradio(**kwargs):
         demo.load(None, None, None, _js=get_dark_js() if kwargs['dark'] else None)
 
     demo.queue(concurrency_count=kwargs['concurrency_count'], api_open=kwargs['api_open'])
-    favicon_path = "h2o-logo.svg"
+    favicon_path = "anz-logo.png"
     if not os.path.isfile(favicon_path):
         print("favicon_path=%s not found" % favicon_path, flush=True)
         favicon_path = None
